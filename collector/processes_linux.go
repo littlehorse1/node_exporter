@@ -53,7 +53,7 @@ func splitStr(str string, start int) string {
         return str
     }
 
-    for i := start + 1; i <= len(str); i++ {
+    for i := start + 1; i < len(str); i++ {
         if strings.ContainsRune(" ", rune(str[i])) { // 判断当前字符是否为空格
             return str[0:i]
         }
