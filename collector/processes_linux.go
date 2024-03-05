@@ -189,7 +189,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			Commandline = splitStr(Commandline,100)
 
 			//添加mysql进程的数据
-			if val,ok := pidmysqls[Pid]; ok {
+			if val,ok := pidsqls[Pid]; ok {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "mysql_cpu"),
@@ -215,7 +215,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.GaugeValue, res, Pid,val,
 				)
 			}
-			
+
 			if Cpu > 0 {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
@@ -345,7 +345,7 @@ func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]fl
 	return pidrds, pidwrs, pidcommands, nil
 }
 
-func (c *processCollector) getMysqlPid() (map[string]float64error) {
+func (c *processCollector) getMysqlPid() (map[string]float64,error) {
 	pidmysqls := make(map[string]string)
 
 	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_")
