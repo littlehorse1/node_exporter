@@ -345,7 +345,7 @@ func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]fl
 	return pidrds, pidwrs, pidcommands, nil
 }
 
-func (c *processCollector) getMysqlPid() (map[string]float64,error) {
+func (c *processCollector) getMysqlPid() (map[string]string,error) {
 	pidmysqls := make(map[string]string)
 
 	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_")
