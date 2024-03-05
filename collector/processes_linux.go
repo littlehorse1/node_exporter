@@ -48,6 +48,21 @@ func init() {
 	registerCollector("processes", defaultEnabled, NewProcessStatCollector)
 }
 
+func splitStr(str string, start int) string {
+    if len(str)-start < 2 || str[start] == ' ' { // 如果起始位置超过了字符串长度或者已经遇到了空格，则返回-1表示未找到
+        return str
+    }
+
+    for i := start + 1; i <= len(str); i++ {
+        if strings.ContainsRune(" ", rune(str[i])) { // 判断当前字符是否为空格
+            return str[0:i]
+        }
+    }
+
+    // 若没有找到空格，则返回-1表示未找到
+    return str
+}
+
 // NewProcessStatCollector returns a new Collector exposing process data read from the proc filesystem.
 func NewProcessStatCollector(logger log.Logger) (Collector, error) {
 	fs, err := procfs.NewFS(*procPath)
@@ -115,59 +130,152 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
 
-	cpus, mems, rsss, ppids, commands, processthreads, err := c.getProcessInfo()
+	pidsqls,err := c.getMysqlPid()
+
+	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
+	// Run the command and capture the output
+	output, err := cmd.Output()
+
 	if err == nil {
-		for cpu := range cpus {
+		result := strings.Split(strings.TrimSpace(string(output)), "\n")
+		re := regexp.MustCompile(`\s+`)
+
+		re1 := regexp.MustCompile(`\d+`)
+		matches := re1.FindAllString(result[1], -1)
+
+		processs := make(map[string]float64)
+		processs["total"], err = strconv.ParseFloat(matches[0], 64)
+		processs["running"], err = strconv.ParseFloat(matches[1], 64)
+		processs["sleeping"], err = strconv.ParseFloat(matches[2], 64)
+		processs["stopped"], err = strconv.ParseFloat(matches[3], 64)
+		processs["zombie"], err = strconv.ParseFloat(matches[4], 64)
+
+		for process := range processs {
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "cpu"),
-					"Linux Process Cpu",
-					[]string{"pid"}, nil,
+					prometheus.BuildFQName(namespace, subsystem, "task"),
+					"Linux Process Task",
+					[]string{"type"}, nil,
 				),
-				prometheus.GaugeValue, cpus[cpu], cpu,
+				prometheus.GaugeValue, processs[process], process,
 			)
 		}
-		for mem := range mems {
-			ch <- prometheus.MustNewConstMetric(
-				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "mem"),
-					"Linux Process Mem",
-					[]string{"pid"}, nil,
-				),
-				prometheus.GaugeValue, mems[mem], mem,
-			)
-		}
-		for rss := range rsss {
-			ch <- prometheus.MustNewConstMetric(
-				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "rss"),
-					"Linux Process Rss",
-					[]string{"pid"}, nil,
-				),
-				prometheus.GaugeValue, rsss[rss], rss,
-			)
-		}
-		for command := range commands {
+		for _, s := range result[7:] {
+			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
+			str := strings.Split(formatStr, " ")
+			Cpu, err := strconv.ParseFloat(str[8], 64)
+			if err != nil {
+				return fmt.Errorf("unable to get cpu: %w", err)
+			}
+			Mem, err := strconv.ParseFloat(str[9], 64)
+			virt, err := strconv.ParseFloat(str[4], 64)
+			if strings.HasSuffix(str[4], "g") {
+				virt,err = strconv.ParseFloat(str[4][:len(str[4])-1], 64)
+				virt = virt * 1024 * 1024
+			}
+			res, err := strconv.ParseFloat(str[5], 64)
+			if strings.HasSuffix(str[5], "g") {
+				res,err = strconv.ParseFloat(str[5][:len(str[5])-1], 64)
+				res = res * 1024 * 1024
+			}
+			shr, err := strconv.ParseFloat(str[6], 64)
+			if strings.HasSuffix(str[6], "g") {
+				shr,err = strconv.ParseFloat(str[6][:len(str[6])-1], 64)
+				shr = shr * 1024 * 1024
+			}
+			Pid := str[0]
+			user := str[1]
+			Commandline := strings.Join(str[11:], " ")
+			Commandline = splitStr(Commandline,100)
+
+			//添加mysql进程的数据
+			if val,ok := pidmysqls[Pid]; ok {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "mysql_cpu"),
+						"Linux Process mysqld cpu",
+						[]string{"pid","mysqlname"}, nil,
+					),
+					prometheus.GaugeValue, Cpu, Pid,val,
+				)
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "mysql_mem"),
+						"Linux Process mem",
+						[]string{"pid","mysqlname"}, nil,
+					),
+					prometheus.GaugeValue, Mem, Pid,val,
+				)
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "mysql_res"),
+						"Linux Process res",
+						[]string{"pid","mysqlname"}, nil,
+					),
+					prometheus.GaugeValue, res, Pid,val,
+				)
+			}
+			
+			if Cpu > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "cpu"),
+						"Linux Process cpu",
+						[]string{"pid","command"}, nil,
+					),
+					prometheus.GaugeValue, Cpu, Pid,Commandline,
+				)
+			}
+			if Mem > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "mem"),
+						"Linux Process mem",
+						[]string{"pid","command"}, nil,
+					),
+					prometheus.GaugeValue, Mem, Pid,Commandline,
+				)
+			}
+			if virt > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "virt"),
+						"Linux Process virt",
+						[]string{"pid","command"}, nil,
+					),
+					prometheus.GaugeValue, virt, Pid,Commandline,
+				)
+			}
+			if res > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "res"),
+						"Linux Process res",
+						[]string{"pid","command"}, nil,
+					),
+					prometheus.GaugeValue, res, Pid,Commandline,
+				)
+			}
+			if shr > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(
+						prometheus.BuildFQName(namespace, subsystem, "shr"),
+						"Linux Process shr",
+						[]string{"pid","command"}, nil,
+					),
+					prometheus.GaugeValue, shr, Pid,Commandline,
+				)
+			}
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
 					prometheus.BuildFQName(namespace, subsystem, "info"),
 					"Linux Process info",
-					[]string{"ppid", "pid", "command"}, nil,
+					[]string{"pid", "command", "user"}, nil,
 				),
-				prometheus.GaugeValue, 1, ppids[command], command, commands[command],
-			)
-			processthreads[command]++
-			ch <- prometheus.MustNewConstMetric(
-				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "thread_num"),
-					"Linux Process threads",
-					[]string{"pid"}, nil,
-				),
-				prometheus.GaugeValue, float64(processthreads[command]), command,
+				prometheus.GaugeValue, 1, Pid, Commandline, user,
 			)
 		}
 	}
-
 	piddiskrds, piddiskwrs, piddiskcommands, err := c.getProcessDiskIO()
 	if err == nil {
 		for pidrd := range piddiskrds {
@@ -192,84 +300,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 
-	//pidiords, pidiowrs, pidiocommands, err := c.getProcessIO()
-	//if err == nil {
-	//	for pidrd := range pidiords {
-	//		ch <- prometheus.MustNewConstMetric(
-	//			prometheus.NewDesc(
-	//				prometheus.BuildFQName(namespace, subsystem, "io_kb_read"),
-	//				"Linux Process io_kb_read",
-	//				[]string{"pid", "command"}, nil,
-	//			),
-	//			prometheus.GaugeValue, pidiords[pidrd], pidrd, pidiocommands[pidrd],
-	//		)
-	//	}
-	//	for pidwr := range pidiowrs {
-	//		ch <- prometheus.MustNewConstMetric(
-	//			prometheus.NewDesc(
-	//				prometheus.BuildFQName(namespace, subsystem, "io_kb_write"),
-	//				"Linux Process io_kb_write",
-	//				[]string{"pid", "command"}, nil,
-	//			),
-	//			prometheus.GaugeValue, pidiowrs[pidwr], pidwr, pidiocommands[pidwr],
-	//		)
-	//	}
-	//}
-
 	return nil
-}
-
-func (c *processCollector) getProcessInfo() (map[string]float64, map[string]float64, map[string]float64, map[string]string, map[string]string, map[string]int, error) {
-	cpus := make(map[string]float64)
-	mems := make(map[string]float64)
-	rsss := make(map[string]float64)
-	ppids := make(map[string]string)
-	commands := make(map[string]string)
-	threads := make(map[string]int)
-
-	cmd := exec.Command("ps", "ax", "-o", "%cpu,%mem,rss,pid,ppid,command")
-
-	// Run the command and capture the output
-	output, err := cmd.Output()
-	if err != nil {
-		// Handle any errors that occurred while running the command
-		level.Info(c.logger).Log("getProcessInfo Error", err)
-		return nil, nil, nil, nil, nil, nil, err
-	}
-
-	result := strings.Split(strings.TrimSpace(string(output)), "\n")
-	re := regexp.MustCompile(`\s+`)
-
-	for _, s := range result[1:] {
-		formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
-		str := strings.Split(formatStr, " ")
-		Cpu, err := strconv.ParseFloat(str[0], 64)
-		if err != nil {
-			level.Info(c.logger).Log("Process Error", err)
-			continue
-		}
-
-		Mem, err := strconv.ParseFloat(str[1], 64)
-		if err != nil {
-			level.Info(c.logger).Log("Process Error", err)
-			continue
-		}
-		Rss, err := strconv.ParseFloat(str[2], 64)
-		if err != nil {
-			level.Info(c.logger).Log("Process Error", err)
-			continue
-		}
-		Pid := str[3]
-		Ppid := str[4]
-		Commandline := strings.Join(str[5:], " ")
-		cpus[Pid] = Cpu
-		mems[Pid] = Mem
-		rsss[Pid] = Rss
-		ppids[Pid] = Ppid
-		commands[Pid] = Commandline
-		threads[Ppid]++
-	}
-	return cpus, mems, rsss, ppids, commands, threads, nil
 }
 
 func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]float64, map[string]string, error) {
@@ -312,6 +343,42 @@ func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]fl
 		}
 	}
 	return pidrds, pidwrs, pidcommands, nil
+}
+
+func (c *processCollector) getMysqlPid() (map[string]float64error) {
+	pidmysqls := make(map[string]string)
+
+	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_")
+
+	output, err := cmd.Output()
+	if err == nil {
+		result := strings.Split(strings.TrimSpace(string(output)), "\n")
+		str := []string{
+				"docker",
+				"inspect",
+				"-f",
+				"{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}}", //{{index .Config.Labels \"io.kubernetes.container.name\"}}
+		}
+		for _, s := range result {
+				str = append(str,s)
+		}
+		cmd = exec.Command(str[0],str[1:]...)
+		output,err = cmd.Output()
+		if err == nil {
+				strs := strings.Split(strings.TrimSpace(string(output)),"\n")
+				for _,str := range strs {
+						lists := strings.Split(str," ")
+						index := strings.Index(lists[1],"-deploy")
+						if index != -1 {
+							pidmysqls[lists[0]] = lists[1][:index]
+						} else {
+							pidmysqls[lists[0]] = lists[1]    
+						}
+				}
+		}
+		return pidmysqls,nil
+	}
+	return nil,nil
 }
 
 func (c *processCollector) getProcessIO() (map[string]float64, map[string]float64, map[string]string, error) {
@@ -454,3 +521,4 @@ func (c *processCollector) isIgnoredError(err error) bool {
 	}
 	return false
 }
+

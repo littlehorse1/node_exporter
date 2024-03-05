@@ -113,6 +113,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			prometheus.GaugeValue, 1.0, Commandline, str[3],
 		)
 	}
+	cmd.Process.Kill()
 	cmd = exec.Command("nettop", "-J", "bytes_in,bytes_out", "-P", "-x", "-d", "-l", "1")
 	// Run the command and capture the output
 	output, err = cmd.Output()
@@ -149,6 +150,12 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			),
 			prometheus.GaugeValue, bytes_out, Pid,
 		)
+	}
+	cmd = exec.Command("pkill", "nettop")
+	output, err = cmd.Output()
+	if err != nil {
+		// Handle any errors that occurred while running the command
+		level.Info(c.logger).Log("nettop Error", err)
 	}
 
 	return nil
