@@ -130,7 +130,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
 
-	pidsqls,err := c.getMysqlPid()
+	pidsqls,pidtypes,err := c.getMysqlPid()
 
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
@@ -192,25 +192,25 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			if val,ok := pidsqls[Pid]; ok {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem, "mysql_cpu"),
+						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid],"cpu"),
 						"Linux Process mysqld cpu",
-						[]string{"pid","mysqlname"}, nil,
+						[]string{"pid","dbname"}, nil,
 					),
 					prometheus.GaugeValue, Cpu, Pid,val,
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem, "mysql_mem"),
+						prometheus.BuildFQName(namespace, subsystem,pidtypes[Pid],"mem"),
 						"Linux Process mem",
-						[]string{"pid","mysqlname"}, nil,
+						[]string{"pid","dbname"}, nil,
 					),
 					prometheus.GaugeValue, Mem, Pid,val,
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem, "mysql_res"),
+						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid],"res"),
 						"Linux Process res",
-						[]string{"pid","mysqlname"}, nil,
+						[]string{"pid","dbname"}, nil,
 					),
 					prometheus.GaugeValue, res, Pid,val,
 				)
@@ -345,8 +345,9 @@ func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]fl
 	return pidrds, pidwrs, pidcommands, nil
 }
 
-func (c *processCollector) getMysqlPid() (map[string]string,error) {
+func (c *processCollector) getMysqlPid() (map[string]string,map[string]string,error) {
 	pidmysqls := make(map[string]string)
+	pidtypes := make(map[string]string)
 
 	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_")
 
@@ -357,7 +358,7 @@ func (c *processCollector) getMysqlPid() (map[string]string,error) {
 				"docker",
 				"inspect",
 				"-f",
-				"{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}}", //{{index .Config.Labels \"io.kubernetes.container.name\"}}
+				"{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}} {{index .Config.Labels \"io.kubernetes.container.name\"}}", 
 		}
 		for _, s := range result {
 				str = append(str,s)
@@ -374,75 +375,76 @@ func (c *processCollector) getMysqlPid() (map[string]string,error) {
 						} else {
 							pidmysqls[lists[0]] = lists[1]    
 						}
+						pidtypes[lists[0]] = lists[2]
 				}
 		}
-		return pidmysqls,nil
+		return pidmysqls,pidtypes,nil
 	}
-	return nil,nil
+	return nil,nil,nil
 }
 
-func (c *processCollector) getProcessIO() (map[string]float64, map[string]float64, map[string]string, error) {
-	pidrds := make(map[string]float64)
-	pidwrs := make(map[string]float64)
-	pidcommands := make(map[string]string)
+// func (c *processCollector) getProcessIO() (map[string]float64, map[string]float64, map[string]string, error) {
+// 	pidrds := make(map[string]float64)
+// 	pidwrs := make(map[string]float64)
+// 	pidcommands := make(map[string]string)
 
-	cmd := exec.Command("iotop", "-b", "-o", "-n", "1", "-k")
-	// Run the command and capture the output
-	output, err := cmd.Output()
-	if err != nil {
-		level.Info(c.logger).Log("getProcessIO Error", err)
-		return nil, nil, nil, err
-		// Handle any errors that occurred while running the command
-	}
-	result := strings.Split(strings.TrimSpace(string(output)), "\n")
-	re := regexp.MustCompile(`\s+`)
-	for _, s := range result[3:] {
-		if strings.HasPrefix(s, "b'") {
-			s = strings.TrimPrefix(s, "b'")
-			s = strings.TrimSuffix(s, "'")
-			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
-			str := strings.Split(formatStr, " ")
+// 	cmd := exec.Command("iotop", "-b", "-o", "-n", "1", "-k")
+// 	// Run the command and capture the output
+// 	output, err := cmd.Output()
+// 	if err != nil {
+// 		level.Info(c.logger).Log("getProcessIO Error", err)
+// 		return nil, nil, nil, err
+// 		// Handle any errors that occurred while running the command
+// 	}
+// 	result := strings.Split(strings.TrimSpace(string(output)), "\n")
+// 	re := regexp.MustCompile(`\s+`)
+// 	for _, s := range result[3:] {
+// 		if strings.HasPrefix(s, "b'") {
+// 			s = strings.TrimPrefix(s, "b'")
+// 			s = strings.TrimSuffix(s, "'")
+// 			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
+// 			str := strings.Split(formatStr, " ")
 
-			pid := str[0]
-			read_kb, err := strconv.ParseFloat(str[3], 64)
-			if err != nil {
-				level.Info(c.logger).Log("Process Error", err)
-				continue
-			}
-			read_wr, err := strconv.ParseFloat(str[5], 64)
-			if err != nil {
-				level.Info(c.logger).Log("Process Error", err)
-				continue
-			}
-			commands := strings.Join(str[8:], " ")
-			pidrds[pid] = read_kb
-			pidwrs[pid] = read_wr
-			pidcommands[pid] = commands
+// 			pid := str[0]
+// 			read_kb, err := strconv.ParseFloat(str[3], 64)
+// 			if err != nil {
+// 				level.Info(c.logger).Log("Process Error", err)
+// 				continue
+// 			}
+// 			read_wr, err := strconv.ParseFloat(str[5], 64)
+// 			if err != nil {
+// 				level.Info(c.logger).Log("Process Error", err)
+// 				continue
+// 			}
+// 			commands := strings.Join(str[8:], " ")
+// 			pidrds[pid] = read_kb
+// 			pidwrs[pid] = read_wr
+// 			pidcommands[pid] = commands
 
-		} else {
-			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
-			str := strings.Split(formatStr, " ")
+// 		} else {
+// 			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
+// 			str := strings.Split(formatStr, " ")
 
-			pid := str[0]
-			read_kb, err := strconv.ParseFloat(str[3], 64)
-			if err != nil {
-				level.Info(c.logger).Log("Process Error", err)
-				continue
-			}
-			read_wr, err := strconv.ParseFloat(str[5], 64)
-			if err != nil {
-				level.Info(c.logger).Log("Process Error", err)
-				continue
-			}
-			commands := strings.Join(str[11:], " ")
-			pidrds[pid] = read_kb
-			pidwrs[pid] = read_wr
-			pidcommands[pid] = commands
-		}
+// 			pid := str[0]
+// 			read_kb, err := strconv.ParseFloat(str[3], 64)
+// 			if err != nil {
+// 				level.Info(c.logger).Log("Process Error", err)
+// 				continue
+// 			}
+// 			read_wr, err := strconv.ParseFloat(str[5], 64)
+// 			if err != nil {
+// 				level.Info(c.logger).Log("Process Error", err)
+// 				continue
+// 			}
+// 			commands := strings.Join(str[11:], " ")
+// 			pidrds[pid] = read_kb
+// 			pidwrs[pid] = read_wr
+// 			pidcommands[pid] = commands
+// 		}
 
-	}
-	return pidrds, pidwrs, pidcommands, nil
-}
+// 	}
+// 	return pidrds, pidwrs, pidcommands, nil
+// }
 
 func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, map[string]int32, error) {
 	p, err := c.fs.AllProcs()
