@@ -349,7 +349,7 @@ func (c *processCollector) getMysqlPid() (map[string]string,map[string]string,er
 	pidmysqls := make(map[string]string)
 	pidtypes := make(map[string]string)
 
-	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_")
+	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_","--filter","name=k8s_redis_")
 
 	output, err := cmd.Output()
 	if err == nil {
