@@ -192,7 +192,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			if val,ok := pidsqls[Pid]; ok {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid],"cpu"),
+						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid]+"_cpu"),
 						"Linux Process mysqld cpu",
 						[]string{"pid","dbname"}, nil,
 					),
@@ -200,7 +200,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem,pidtypes[Pid],"mem"),
+						prometheus.BuildFQName(namespace, subsystem,pidtypes[Pid]+"_mem"),
 						"Linux Process mem",
 						[]string{"pid","dbname"}, nil,
 					),
@@ -208,7 +208,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid],"res"),
+						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid]+"_res"),
 						"Linux Process res",
 						[]string{"pid","dbname"}, nil,
 					),
