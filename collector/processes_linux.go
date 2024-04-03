@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -108,8 +109,10 @@ func NewProcessStatCollector(logger log.Logger) (Collector, error) {
 	}, nil
 }
 func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
+	fmt.Println("1当前时间是：",time.Now())
 	subsystem := "processes"
 	pids, states, threads, threadStates, err := c.getAllocatedThreads()
+	
 	if err != nil {
 		return fmt.Errorf("unable to retrieve number of allocated threads: %w", err)
 	}
@@ -135,12 +138,13 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
-
+	fmt.Println("2当前时间是：",time.Now())
 	pidsqls,pidtypes,err := c.getDbPids()
-
+	fmt.Println("3当前时间是：",time.Now())
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
 	output, err := cmd.Output()
+	fmt.Println("4当前时间是：",time.Now())
 
 	if err == nil {
 		result := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -282,7 +286,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
+	fmt.Println("5当前时间是：",time.Now())
 	info, err := c.getProcessDiskIO()
+	fmt.Println("6当前时间是：",time.Now())
 	if err == nil {
 		for pidrd := range info.piddiskrds {
 			ch <- prometheus.MustNewConstMetric(
@@ -305,7 +311,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-
+	fmt.Println("7当前时间是：",time.Now())
 	return nil
 }
 
