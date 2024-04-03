@@ -391,8 +391,9 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 						}
 
 						if dbtype == "mongo" {
+							fmt.Println("start:"+time.Now())
 							regexpattern := `mongod\((\d+)\)`
-							cmd := exec.Command("pstree","-p",pid)
+							cmd := exec.Command("pstree","-p",pid,"-T")
 
 							re, err := regexp.Compile(regexpattern)
 
