@@ -47,7 +47,7 @@ type processCollector struct {
 type processDiskIoInfo struct {
 	piddiskrds map[string]float64
 	piddiskwrs map[string]float64
-	piddiskcommandsmap map[string]string
+	piddiskcommands map[string]string
 }
 
 func init() {
@@ -282,26 +282,26 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	piddiskrds, piddiskwrs, piddiskcommands, err := c.getProcessDiskIO()
+	info, err := c.getProcessDiskIO()
 	if err == nil {
-		for pidrd := range piddiskrds {
+		for pidrd := range info.piddiskrds {
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
 					prometheus.BuildFQName(namespace, subsystem, "disk_kb_read"),
 					"Linux Process disk_kb_read",
 					[]string{"pid", "command"}, nil,
 				),
-				prometheus.GaugeValue, piddiskrds[pidrd], pidrd, piddiskcommands[pidrd],
+				prometheus.GaugeValue, info.piddiskrds[pidrd], pidrd, info.piddiskcommands[pidrd],
 			)
 		}
-		for pidwr := range piddiskwrs {
+		for pidwr := range info.piddiskwrs {
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
 					prometheus.BuildFQName(namespace, subsystem, "disk_kb_write"),
 					"Linux Process disk_kb_write",
 					[]string{"pid", "command"}, nil,
 				),
-				prometheus.GaugeValue, piddiskwrs[pidwr], pidwr, piddiskcommands[pidwr],
+				prometheus.GaugeValue, info.piddiskwrs[pidwr], pidwr, info.piddiskcommands[pidwr],
 			)
 		}
 	}
@@ -309,11 +309,10 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *processCollector) getProcessDiskIO() (processDiskIoInfo, error) {
-    info := make(processDiskIoInfo)
-	// pidrds := make(map[string]float64)
-	// pidwrs := make(map[string]float64)
-	// pidcommands := make(map[string]string)
+func (c *processCollector) getProcessDiskIO() (*processDiskIoInfo, error) {
+	pidrds := make(map[string]float64)
+	pidwrs := make(map[string]float64)
+	pidcommands := make(map[string]string)
 
 	cmd := exec.Command("pidstat", "-d", "-l", "1", "5")
 	// Run the command and capture the output
@@ -343,10 +342,15 @@ func (c *processCollector) getProcessDiskIO() (processDiskIoInfo, error) {
 				continue
 			}
 			commands := strings.Join(str[5:], " ")
-			info.pidrds[pid] = read_kb
-			infopidwrs[pid] = read_wr
-			infopidcommands[pid] = commands
+			pidrds[pid] = read_kb
+			pidwrs[pid] = read_wr
+			pidcommands[pid] = commands
 		}
+	}
+	info := &processDiskIoInfo{
+		piddiskrds: pidrds,
+		piddiskwrs: pidwrs,
+		piddiskcommands: pidcommands,
 	}
 	return info, nil
 }
@@ -388,69 +392,6 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 	}
 	return nil,nil,nil
 }
-
-// func (c *processCollector) getProcessIO() (map[string]float64, map[string]float64, map[string]string, error) {
-// 	pidrds := make(map[string]float64)
-// 	pidwrs := make(map[string]float64)
-// 	pidcommands := make(map[string]string)
-
-// 	cmd := exec.Command("iotop", "-b", "-o", "-n", "1", "-k")
-// 	// Run the command and capture the output
-// 	output, err := cmd.Output()
-// 	if err != nil {
-// 		level.Info(c.logger).Log("getProcessIO Error", err)
-// 		return nil, nil, nil, err
-// 		// Handle any errors that occurred while running the command
-// 	}
-// 	result := strings.Split(strings.TrimSpace(string(output)), "\n")
-// 	re := regexp.MustCompile(`\s+`)
-// 	for _, s := range result[3:] {
-// 		if strings.HasPrefix(s, "b'") {
-// 			s = strings.TrimPrefix(s, "b'")
-// 			s = strings.TrimSuffix(s, "'")
-// 			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
-// 			str := strings.Split(formatStr, " ")
-
-// 			pid := str[0]
-// 			read_kb, err := strconv.ParseFloat(str[3], 64)
-// 			if err != nil {
-// 				level.Info(c.logger).Log("Process Error", err)
-// 				continue
-// 			}
-// 			read_wr, err := strconv.ParseFloat(str[5], 64)
-// 			if err != nil {
-// 				level.Info(c.logger).Log("Process Error", err)
-// 				continue
-// 			}
-// 			commands := strings.Join(str[8:], " ")
-// 			pidrds[pid] = read_kb
-// 			pidwrs[pid] = read_wr
-// 			pidcommands[pid] = commands
-
-// 		} else {
-// 			formatStr := re.ReplaceAllString(strings.TrimSpace(s), " ")
-// 			str := strings.Split(formatStr, " ")
-
-// 			pid := str[0]
-// 			read_kb, err := strconv.ParseFloat(str[3], 64)
-// 			if err != nil {
-// 				level.Info(c.logger).Log("Process Error", err)
-// 				continue
-// 			}
-// 			read_wr, err := strconv.ParseFloat(str[5], 64)
-// 			if err != nil {
-// 				level.Info(c.logger).Log("Process Error", err)
-// 				continue
-// 			}
-// 			commands := strings.Join(str[11:], " ")
-// 			pidrds[pid] = read_kb
-// 			pidwrs[pid] = read_wr
-// 			pidcommands[pid] = commands
-// 		}
-
-// 	}
-// 	return pidrds, pidwrs, pidcommands, nil
-// }
 
 func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, map[string]int32, error) {
 	p, err := c.fs.AllProcs()
