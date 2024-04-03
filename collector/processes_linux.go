@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
+	// "time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -305,7 +305,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	fmt.Println("7当前时间是：",time.Now())
+	// fmt.Println("当前时间是：",time.Now())
 	return nil
 }
 
@@ -379,12 +379,39 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 				strs := strings.Split(strings.TrimSpace(string(output)),"\n")
 				for _,str := range strs {
 						lists := strings.Split(str," ")
+						pid := lists[0]
+						dbname := ""
+						dbtype := lists[1]
+
 						index := strings.Index(lists[1],"-deploy")
 						if index != -1 {
-							pidmysqls[lists[0]] = lists[1][:index]
+							dbname = lists[1][:index]
 						} else {
-							pidmysqls[lists[0]] = lists[1]    
+							dbname = lists[1]    
 						}
+
+						if dbtype == "mongo" {
+							regexpattern := `mongod\((\d+)\)`
+							cmd := exec.Command("pstree","-p",pid)
+
+							re, err := regexp.Compile(regexpattern)
+
+							if err != nil {
+									continue;
+							} else{
+									output,_ := cmd.Output()
+					
+									strs := strings.Split(strings.TrimSpace(string(output)),"\n")
+									matches := re.FindStringSubmatch(strs[0])
+									if len(matches) > 1 {
+											pid = matches[1]
+									}
+									else {
+											continue
+									}
+							}
+						}
+						pidmysqls[pid] = dbname 
 						pidtypes[lists[0]] = lists[2]
 				}
 		}
