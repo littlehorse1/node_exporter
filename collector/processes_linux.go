@@ -397,15 +397,18 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 							re, err := regexp.Compile(regexpattern)
 
 							if err != nil {
+									fmt.Println("regex error")
 									continue;
 							} else{
 									output,_ := cmd.Output()
-					
+									
 									strs := strings.Split(strings.TrimSpace(string(output)),"\n")
+									fmt.Println(strs[0])
 									matches := re.FindStringSubmatch(strs[0])
 									if len(matches) > 1 {
 											pid = matches[1]
 									} else {
+										fmt.Println("match error")
 											continue;
 									}
 							}
