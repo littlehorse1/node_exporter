@@ -414,7 +414,7 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 							}
 						}
 						pidmysqls[pid] = dbname 
-						pidtypes[lists[0]] = lists[2]
+						pidtypes[pid] = dbtype
 				}
 		}
 		return pidmysqls,pidtypes,nil
