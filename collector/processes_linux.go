@@ -405,9 +405,8 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 									matches := re.FindStringSubmatch(strs[0])
 									if len(matches) > 1 {
 											pid = matches[1]
-									}
-									else {
-											continue
+									} else {
+											continue;
 									}
 							}
 						}
