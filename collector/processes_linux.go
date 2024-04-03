@@ -381,7 +381,7 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 						lists := strings.Split(str," ")
 						pid := lists[0]
 						dbname := ""
-						dbtype := lists[1]
+						dbtype := lists[2]
 
 						index := strings.Index(lists[1],"-deploy")
 						if index != -1 {
