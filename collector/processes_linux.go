@@ -319,7 +319,7 @@ func (c *processCollector) getProcessDiskIO() (*processDiskIoInfo, error) {
 	output, err := cmd.Output()
 	if err != nil {
 		level.Info(c.logger).Log("getProcessDiskIO Error", err)
-		return nil, nil, nil, err
+		return nil, err
 		// Handle any errors that occurred while running the command
 	}
 	result := strings.Split(strings.TrimSpace(string(output)), "\n")
