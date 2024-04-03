@@ -44,6 +44,12 @@ type processCollector struct {
 	logger       log.Logger
 }
 
+type processDiskIoInfo struct {
+	piddiskrds map[string]float64
+	piddiskwrs map[string]float64
+	piddiskcommandsmap map[string]string
+}
+
 func init() {
 	registerCollector("processes", defaultEnabled, NewProcessStatCollector)
 }
@@ -130,7 +136,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
 
-	pidsqls,pidtypes,err := c.getMysqlPid()
+	pidsqls,pidtypes,err := c.getDbPids()
 
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
@@ -188,7 +194,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			Commandline := strings.Join(str[11:], " ")
 			Commandline = splitStr(Commandline,100)
 
-			//添加mysql进程的数据
+			//添加数据库进程的数据
 			if val,ok := pidsqls[Pid]; ok {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
@@ -303,11 +309,11 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]float64, map[string]string, error) {
-
-	pidrds := make(map[string]float64)
-	pidwrs := make(map[string]float64)
-	pidcommands := make(map[string]string)
+func (c *processCollector) getProcessDiskIO() (processDiskIoInfo, error) {
+    info := make(processDiskIoInfo)
+	// pidrds := make(map[string]float64)
+	// pidwrs := make(map[string]float64)
+	// pidcommands := make(map[string]string)
 
 	cmd := exec.Command("pidstat", "-d", "-l", "1", "5")
 	// Run the command and capture the output
@@ -337,15 +343,15 @@ func (c *processCollector) getProcessDiskIO() (map[string]float64, map[string]fl
 				continue
 			}
 			commands := strings.Join(str[5:], " ")
-			pidrds[pid] = read_kb
-			pidwrs[pid] = read_wr
-			pidcommands[pid] = commands
+			info.pidrds[pid] = read_kb
+			infopidwrs[pid] = read_wr
+			infopidcommands[pid] = commands
 		}
 	}
-	return pidrds, pidwrs, pidcommands, nil
+	return info, nil
 }
 
-func (c *processCollector) getMysqlPid() (map[string]string,map[string]string,error) {
+func (c *processCollector) getDbPids() (map[string]string,map[string]string,error) {
 	pidmysqls := make(map[string]string)
 	pidtypes := make(map[string]string)
 
