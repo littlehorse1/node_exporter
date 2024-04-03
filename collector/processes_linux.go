@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
+	// "time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -391,7 +391,6 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 						}
 
 						if dbtype == "mongo" {
-							fmt.Println("start:",time.Now())
 							regexpattern := `mongod\((\d+)\)`
 							cmd := exec.Command("pstree","-p",pid,"-T")
 
@@ -410,7 +409,6 @@ func (c *processCollector) getDbPids() (map[string]string,map[string]string,erro
 											continue;
 									}
 							}
-							fmt.Println("end:",time.Now())
 						}
 						pidmysqls[pid] = dbname 
 						pidtypes[pid] = dbtype
