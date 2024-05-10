@@ -56,18 +56,32 @@ func init() {
 }
 
 func splitStr(str string, start int) string {
-    if len(str)-start < 2 || str[start] == ' ' { // 如果起始位置超过了字符串长度或者已经遇到了空格，则返回-1表示未找到
-        return str
-    }
+	if len(str)-start < 2 || str[start] == ' ' { // 如果起始位置超过了字符串长度或者已经遇到了空格，则返回-1表示未找到
+		return str
+	}
 
-    for i := start + 1; i < len(str); i++ {
-        if strings.ContainsRune(" ", rune(str[i])) { // 判断当前字符是否为空格
-            return str[0:i]
-        }
-    }
+	for i := start + 1; i < len(str); i++ {
+		if strings.ContainsRune(" ", rune(str[i])) { // 判断当前字符是否为空格
+			return str[0:i]
+		}
+	}
 
-    // 若没有找到空格，则返回-1表示未找到
-    return str
+	// 若没有找到空格，则返回-1表示未找到
+	return str
+}
+
+func ConvertMem(mem string) float64 {
+	res := 0.0
+	if strings.HasSuffix(mem, "g") {
+		res, _ = strconv.ParseFloat(mem[:len(mem)-1], 64)
+		res = res * 1024 * 1024
+	} else if strings.HasSuffix(mem, "m") {
+		res, _ = strconv.ParseFloat(mem[:len(mem)-1], 64)
+		res = res * 1024
+	} else {
+		res, _ = strconv.ParseFloat(mem, 64)
+	}
+	return res
 }
 
 // NewProcessStatCollector returns a new Collector exposing process data read from the proc filesystem.
@@ -111,7 +125,7 @@ func NewProcessStatCollector(logger log.Logger) (Collector, error) {
 func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	subsystem := "processes"
 	pids, states, threads, threadStates, err := c.getAllocatedThreads()
-	
+
 	if err != nil {
 		return fmt.Errorf("unable to retrieve number of allocated threads: %w", err)
 	}
@@ -174,25 +188,29 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 				return fmt.Errorf("unable to get cpu: %w", err)
 			}
 			Mem, err := strconv.ParseFloat(str[9], 64)
-			virt, err := strconv.ParseFloat(str[4], 64)
-			if strings.HasSuffix(str[4], "g") {
-				virt,err = strconv.ParseFloat(str[4][:len(str[4])-1], 64)
-				virt = virt * 1024 * 1024
-			}
-			res, err := strconv.ParseFloat(str[5], 64)
-			if strings.HasSuffix(str[5], "g") {
-				res,err = strconv.ParseFloat(str[5][:len(str[5])-1], 64)
-				res = res * 1024 * 1024
-			}
-			shr, err := strconv.ParseFloat(str[6], 64)
-			if strings.HasSuffix(str[6], "g") {
-				shr,err = strconv.ParseFloat(str[6][:len(str[6])-1], 64)
-				shr = shr * 1024 * 1024
-			}
+			// virt, err := strconv.ParseFloat(str[4], 64)
+			virt := ConvertMem(str[4])
+			res := ConvertMem(str[5])
+			shr := ConvertMem(str[6])
+			// if strings.HasSuffix(str[4], "g") {
+			// 	virt,err = strconv.ParseFloat(str[4][:len(str[4])-1], 64)
+			// 	virt = virt * 1024 * 1024
+			// }
+
+			// res, err := strconv.ParseFloat(str[5], 64)
+			// if strings.HasSuffix(str[5], "g") {
+			// 	res,err = strconv.ParseFloat(str[5][:len(str[5])-1], 64)
+			// 	res = res * 1024 * 1024
+			// }
+			// shr, err := strconv.ParseFloat(str[6], 64)
+			// if strings.HasSuffix(str[6], "g") {
+			// 	shr,err = strconv.ParseFloat(str[6][:len(str[6])-1], 64)
+			// 	shr = shr * 1024 * 1024
+			// }
 			Pid := str[0]
 			user := str[1]
 			Commandline := strings.Join(str[11:], " ")
-			Commandline = splitStr(Commandline,100)
+			Commandline = splitStr(Commandline, 100)
 
 			//添加数据库进程的数据
 			if val,ok := pidsqls[Pid]; ok {
@@ -348,76 +366,76 @@ func (c *processCollector) getProcessDiskIO() (*processDiskIoInfo, error) {
 		}
 	}
 	info := &processDiskIoInfo{
-		piddiskrds: pidrds,
-		piddiskwrs: pidwrs,
+		piddiskrds:      pidrds,
+		piddiskwrs:      pidwrs,
 		piddiskcommands: pidcommands,
 	}
 	return info, nil
 }
 
-func (c *processCollector) getDbPids() (map[string]string,map[string]string,error) {
+func (c *processCollector) getDbPids() (map[string]string, map[string]string, error) {
 	pidmysqls := make(map[string]string)
 	pidtypes := make(map[string]string)
 
-	cmd := exec.Command("docker","ps","-a","-q","--filter","status=running","--filter","name=k8s_mysql_","--filter","name=k8s_redis_","--filter","name=k8s_mongo_")
+	cmd := exec.Command("docker", "ps", "-a", "-q", "--filter", "status=running", "--filter", "name=k8s_mysql_", "--filter", "name=k8s_redis_", "--filter", "name=k8s_mongo_")
 
 	output, err := cmd.Output()
 	if err == nil {
 		result := strings.Split(strings.TrimSpace(string(output)), "\n")
 		str := []string{
-				"docker",
-				"inspect",
-				"-f",
-				"{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}} {{index .Config.Labels \"io.kubernetes.container.name\"}}", 
+			"docker",
+			"inspect",
+			"-f",
+			"{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}} {{index .Config.Labels \"io.kubernetes.container.name\"}}",
 		}
 		for _, s := range result {
-				str = append(str,s)
+			str = append(str, s)
 		}
-		cmd = exec.Command(str[0],str[1:]...)
-		output,err = cmd.Output()
+		cmd = exec.Command(str[0], str[1:]...)
+		output, err = cmd.Output()
 		if err == nil {
-				strs := strings.Split(strings.TrimSpace(string(output)),"\n")
-				for _,str := range strs {
-						lists := strings.Split(str," ")
-						pid := lists[0]
-						dbname := ""
-						dbtype := lists[2]
+			strs := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, str := range strs {
+				lists := strings.Split(str, " ")
+				pid := lists[0]
+				dbname := ""
+				dbtype := lists[2]
 
-						index := strings.Index(lists[1],"-deploy")
-						if index != -1 {
-							dbname = lists[1][:index]
-						} else {
-							dbname = lists[1]    
-						}
-
-						if dbtype == "mongo" {
-							regexpattern := `mongod\((\d+)\)`
-							cmd := exec.Command("pstree","-p",pid,"-T")
-
-							re, err := regexp.Compile(regexpattern)
-
-							if err != nil {
-									continue;
-							} else{
-									output,_ := cmd.Output()
-									
-									strs := strings.Split(strings.TrimSpace(string(output)),"\n")
-									matches := re.FindStringSubmatch(strs[0])
-									if len(matches) > 1 {
-											pid = matches[1]
-									} else {
-											continue;
-									}
-							}
-						}
-						pidmysqls[pid] = dbname 
-						pidtypes[pid] = dbtype
-						
+				index := strings.Index(lists[1], "-deploy")
+				if index != -1 {
+					dbname = lists[1][:index]
+				} else {
+					dbname = lists[1]
 				}
+
+				if dbtype == "mongo" {
+					regexpattern := `mongod\((\d+)\)`
+					cmd := exec.Command("pstree", "-p", pid, "-T")
+
+					re, err := regexp.Compile(regexpattern)
+
+					if err != nil {
+						continue
+					} else {
+						output, _ := cmd.Output()
+
+						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
+						matches := re.FindStringSubmatch(strs[0])
+						if len(matches) > 1 {
+							pid = matches[1]
+						} else {
+							continue
+						}
+					}
+				}
+				pidmysqls[pid] = dbname
+				pidtypes[pid] = dbtype
+
+			}
 		}
-		return pidmysqls,pidtypes,nil
+		return pidmysqls, pidtypes, nil
 	}
-	return nil,nil,nil
+	return nil, nil, nil
 }
 
 func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, map[string]int32, error) {
@@ -497,4 +515,3 @@ func (c *processCollector) isIgnoredError(err error) bool {
 	}
 	return false
 }
-
