@@ -19,7 +19,11 @@ package collector
 
 import (
 	"errors"
+	"os"
 	"regexp"
+	"math/rand"
+	"io/ioutil"
+	"fmt"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
@@ -214,6 +218,107 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 			c.roDesc, prometheus.GaugeValue,
 			s.ro, s.labels.device, s.labels.mountPoint, s.labels.fsType,
 		)
+
+		//判断磁盘读写状态
+		subsystem := "filesystem"
+		path := s.labels.mountPoint
+		file := path + "rwtest.log"
+		content := genRandStr()
+
+		fd, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		defer fd.Close()
+		if err != nil {
+			//logger.Error("Open file failed: ", err)
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					"Linux filesystem rw state",
+					filesystemLabelNames, nil,
+				), prometheus.GaugeValue,
+				1, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+			)
+			continue
+		}
+		buf := []byte(content)
+		count, err := fd.Write(buf)
+		if err != nil || count != len(buf) {
+			//logger.Error("Write file failed: ", err)
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					"Linux filesystem rw state",
+					filesystemLabelNames, nil,
+				), prometheus.GaugeValue,
+				2, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+			)
+			continue
+		}
+		//read test
+		read, err := ioutil.ReadFile(file)
+		if err != nil {
+			//logger.Error("Read file failed: ", err)
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					"Linux filesystem rw state",
+					filesystemLabelNames, nil,
+				), prometheus.GaugeValue,
+				3, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+			)
+			continue
+		}
+		if string(read) != content {
+			//logger.Error("Read content failed: ", string(read))
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					"Linux filesystem rw state",
+					filesystemLabelNames, nil,
+				), prometheus.GaugeValue,
+				4, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+			)
+			continue
+		}
+		//clean the file
+		err = os.Remove(file)
+		if err != nil {
+			//logger.Error("Remove file filed: ", err)
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					"Linux filesystem rw state",
+					filesystemLabelNames, nil,
+				), prometheus.GaugeValue,
+				5, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+			)
+			continue
+		}
+		//全都没问题，写0
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+				"Linux filesystem rw state",
+				filesystemLabelNames, nil,
+			), prometheus.GaugeValue,
+			0, s.labels.device, s.labels.mountPoint, s.labels.fsType,
+		)
 	}
 	return nil
+}
+
+func genRandStr() string {
+	const len = 5
+	var letters []byte = []byte("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	randBytes := make([]byte, len)
+	if _, err := rand.Read(randBytes); err != nil {
+		return fmt.Sprintf("%d", rand.Int63())
+	}
+
+	for i := 0; i < len; i++ {
+		pos := randBytes[i] % 62
+		randBytes[i] = letters[pos]
+	}
+
+	return string(randBytes)
 }
