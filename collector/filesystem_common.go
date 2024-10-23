@@ -231,7 +231,7 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 			//logger.Error("Open file failed: ", err)
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 					"Linux filesystem rw state",
 					filesystemLabelNames, nil,
 				), prometheus.GaugeValue,
@@ -245,7 +245,7 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 			//logger.Error("Write file failed: ", err)
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 					"Linux filesystem rw state",
 					filesystemLabelNames, nil,
 				), prometheus.GaugeValue,
@@ -286,7 +286,7 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 			//logger.Error("Remove file filed: ", err)
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 					"Linux filesystem rw state",
 					filesystemLabelNames, nil,
 				), prometheus.GaugeValue,
@@ -297,7 +297,7 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 		//全都没问题，写0
 		ch <- prometheus.MustNewConstMetric(
 			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+				prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 				"Linux filesystem rw state",
 				filesystemLabelNames, nil,
 			), prometheus.GaugeValue,
