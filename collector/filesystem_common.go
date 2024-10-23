@@ -19,11 +19,11 @@ package collector
 
 import (
 	"errors"
+	"fmt"
+	"io/ioutil"
+	"math/rand"
 	"os"
 	"regexp"
-	"math/rand"
-	"io/ioutil"
-	"fmt"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
@@ -255,11 +255,12 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 		//read test
 		read, err := ioutil.ReadFile(file)
+
 		if err != nil {
 			//logger.Error("Read file failed: ", err)
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 					"Linux filesystem rw state",
 					filesystemLabelNames, nil,
 				), prometheus.GaugeValue,
@@ -271,7 +272,7 @@ func (c *filesystemCollector) Update(ch chan<- prometheus.Metric) error {
 			//logger.Error("Read content failed: ", string(read))
 			ch <- prometheus.MustNewConstMetric(
 				prometheus.NewDesc(
-					prometheus.BuildFQName(namespace, subsystem, "_rw_error"),
+					prometheus.BuildFQName(namespace, subsystem, "rw_error"),
 					"Linux filesystem rw state",
 					filesystemLabelNames, nil,
 				), prometheus.GaugeValue,
