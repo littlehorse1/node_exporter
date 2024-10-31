@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
 	// "time"
 
 	"github.com/go-kit/log"
@@ -46,8 +47,8 @@ type processCollector struct {
 }
 
 type processDiskIoInfo struct {
-	piddiskrds map[string]float64
-	piddiskwrs map[string]float64
+	piddiskrds      map[string]float64
+	piddiskwrs      map[string]float64
 	piddiskcommands map[string]string
 }
 
@@ -151,7 +152,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
-	pidsqls,pidtypes,err := c.getDbPids()
+	pidsqls, pidtypes, err := c.getDbPids()
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
 	output, err := cmd.Output()
@@ -213,30 +214,30 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			Commandline = splitStr(Commandline, 100)
 
 			//添加数据库进程的数据
-			if val,ok := pidsqls[Pid]; ok {
+			if val, ok := pidsqls[Pid]; ok {
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid]+"_cpu"),
 						"Linux Process mysqld cpu",
-						[]string{"pid","dbname"}, nil,
+						[]string{"pid", "dbname"}, nil,
 					),
-					prometheus.GaugeValue, Cpu, Pid,val,
+					prometheus.GaugeValue, Cpu, Pid, val,
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
-						prometheus.BuildFQName(namespace, subsystem,pidtypes[Pid]+"_mem"),
+						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid]+"_mem"),
 						"Linux Process mem",
-						[]string{"pid","dbname"}, nil,
+						[]string{"pid", "dbname"}, nil,
 					),
-					prometheus.GaugeValue, Mem, Pid,val,
+					prometheus.GaugeValue, Mem, Pid, val,
 				)
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, pidtypes[Pid]+"_res"),
 						"Linux Process res",
-						[]string{"pid","dbname"}, nil,
+						[]string{"pid", "dbname"}, nil,
 					),
-					prometheus.GaugeValue, res, Pid,val,
+					prometheus.GaugeValue, res, Pid, val,
 				)
 			}
 
@@ -245,9 +246,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "cpu"),
 						"Linux Process cpu",
-						[]string{"pid","command"}, nil,
+						[]string{"pid", "command"}, nil,
 					),
-					prometheus.GaugeValue, Cpu, Pid,Commandline,
+					prometheus.GaugeValue, Cpu, Pid, Commandline,
 				)
 			}
 			if Mem > 0 {
@@ -255,9 +256,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "mem"),
 						"Linux Process mem",
-						[]string{"pid","command"}, nil,
+						[]string{"pid", "command"}, nil,
 					),
-					prometheus.GaugeValue, Mem, Pid,Commandline,
+					prometheus.GaugeValue, Mem, Pid, Commandline,
 				)
 			}
 			if virt > 0 {
@@ -265,9 +266,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "virt"),
 						"Linux Process virt",
-						[]string{"pid","command"}, nil,
+						[]string{"pid", "command"}, nil,
 					),
-					prometheus.GaugeValue, virt, Pid,Commandline,
+					prometheus.GaugeValue, virt, Pid, Commandline,
 				)
 			}
 			if res > 0 {
@@ -275,9 +276,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "res"),
 						"Linux Process res",
-						[]string{"pid","command"}, nil,
+						[]string{"pid", "command"}, nil,
 					),
-					prometheus.GaugeValue, res, Pid,Commandline,
+					prometheus.GaugeValue, res, Pid, Commandline,
 				)
 			}
 			if shr > 0 {
@@ -285,9 +286,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					prometheus.NewDesc(
 						prometheus.BuildFQName(namespace, subsystem, "shr"),
 						"Linux Process shr",
-						[]string{"pid","command"}, nil,
+						[]string{"pid", "command"}, nil,
 					),
-					prometheus.GaugeValue, shr, Pid,Commandline,
+					prometheus.GaugeValue, shr, Pid, Commandline,
 				)
 			}
 			ch <- prometheus.MustNewConstMetric(
@@ -419,11 +420,13 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 						output, _ := cmd.Output()
 
 						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						matches := re.FindStringSubmatch(strs[0])
-						if len(matches) > 1 {
-							pid = matches[1]
-						} else {
-							continue
+						for _, line := range strs {
+							matches := re.FindStringSubmatch(line)
+							if len(matches) > 1 {
+								pid = matches[1]
+							} else {
+								continue
+							}
 						}
 					}
 				}
@@ -439,11 +442,13 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 						output, _ := cmd.Output()
 
 						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						matches := re.FindStringSubmatch(strs[0])
-						if len(matches) > 1 {
-							pid = matches[1]
-						} else {
-							continue
+						for _, line := range strs {
+							matches := re.FindStringSubmatch(line)
+							if len(matches) > 1 {
+								pid = matches[1]
+							} else {
+								continue
+							}
 						}
 					}
 				}
@@ -460,11 +465,13 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 						output, _ := cmd.Output()
 
 						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						matches := re.FindStringSubmatch(strs[0])
-						if len(matches) > 1 {
-							pid = matches[1]
-						} else {
-							continue
+						for _, line := range strs {
+							matches := re.FindStringSubmatch(line)
+							if len(matches) > 1 {
+								pid = matches[1]
+							} else {
+								continue
+							}
 						}
 					}
 				}
