@@ -407,6 +407,46 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 				} else {
 					dbname = lists[1]
 				}
+				if dbtype == "mysql" {
+					regexpattern := `mysqld\((\d+)\)`
+					cmd := exec.Command("pstree", "-p", pid, "-T")
+
+					re, err := regexp.Compile(regexpattern)
+
+					if err != nil {
+						continue
+					} else {
+						output, _ := cmd.Output()
+
+						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
+						matches := re.FindStringSubmatch(strs[0])
+						if len(matches) > 1 {
+							pid = matches[1]
+						} else {
+							continue
+						}
+					}
+				}
+				if dbtype == "redis" {
+					regexpattern := `redis-server\((\d+)\)`
+					cmd := exec.Command("pstree", "-p", pid, "-T")
+
+					re, err := regexp.Compile(regexpattern)
+
+					if err != nil {
+						continue
+					} else {
+						output, _ := cmd.Output()
+
+						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
+						matches := re.FindStringSubmatch(strs[0])
+						if len(matches) > 1 {
+							pid = matches[1]
+						} else {
+							continue
+						}
+					}
+				}
 
 				if dbtype == "mongo" {
 					regexpattern := `mongod\((\d+)\)`
