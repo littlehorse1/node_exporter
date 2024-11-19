@@ -125,6 +125,16 @@ func NewProcessStatCollector(logger log.Logger) (Collector, error) {
 }
 func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	subsystem := "processes"
+
+	ch <- prometheus.MustNewConstMetric(
+		prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem, "version"),
+			"Node Exporter Version",
+			nil, nil,
+		),
+		prometheus.GaugeValue, 1.0, "",
+	)
+	
 	pids, states, threads, threadStates, err := c.getAllocatedThreads()
 
 	if err != nil {
