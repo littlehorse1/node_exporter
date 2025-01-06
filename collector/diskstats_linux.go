@@ -441,7 +441,7 @@ func (c *diskstatsCollector) Update(ch chan<- prometheus.Metric) error {
 		for key, value := range results1 {
 			var Value int64
 			var err error
-			device := strings.Fields(value)[0]
+			device := args[0]
 			if strings.Contains(value, "0x") {
 				hexstring := value[2:]
 				Value, err = strconv.ParseInt(hexstring, 16, 64)
