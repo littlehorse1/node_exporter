@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -367,6 +368,124 @@ func (c *diskstatsCollector) Update(ch chan<- prometheus.Metric) error {
 			}
 		}
 	}
+
+	//获取smart信息
+	cmd := exec.Command("smartctl", "--scan")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("couldn't smartctl scan: %w", err)
+	}
+
+	// 将输出转换为字符串并按行分割
+	outputStr := string(output)
+	scanner := bufio.NewScanner(strings.NewReader(outputStr))
+	var results []string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		// 提取 # 之前的内容
+		if idx := strings.Index(line, "#"); idx != -1 {
+			results = append(results, strings.TrimSpace(line[:idx]))
+		} else {
+			results = append(results, strings.TrimSpace(line))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("couldn't scanner scan: %w", err)
+	}
+
+	// 打印结果
+	for _, result := range results {
+		cmdName := "smartctl"
+		args := strings.Fields(result)
+
+		// 执行 smartctl -A /dev/nvme0 -d nvme 命令
+		cmd = exec.Command(cmdName, append([]string{"-A"}, args...)...)
+		output, err = cmd.Output()
+		if err != nil {
+			continue
+		}
+
+		// 将输出转换为字符串并按行分割
+		outputStr = string(output)
+		scanner = bufio.NewScanner(strings.NewReader(outputStr))
+
+		// 标记是否已经找到 "SMART/Health Information" 行
+		found := false
+
+		// 保存键值对结果的 map
+		results1 := make(map[string]string)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if found {
+				// 处理 "SMART/Health Information" 行之后的内容
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
+					results1[key] = value
+				}
+			} else if strings.Contains(line, "SMART/Health Information") {
+				// 找到 "SMART/Health Information" 行
+				found = true
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			continue
+		}
+
+		// 打印结果
+		for key, value := range results1 {
+			var Value int64
+			var err error
+			device := strings.Fields(value)[0]
+			if strings.Contains(value, "0x") {
+				hexstring := value[2:]
+				Value, err = strconv.ParseInt(hexstring, 16, 64)
+				if err != nil {
+					continue
+				}
+			} else if strings.Contains(value, " ") {
+				temp := strings.Fields(value)[0]
+				if strings.Contains(temp, ",") {
+					temp = strings.ReplaceAll(temp, ",", "")
+				}
+				Value, err = strconv.ParseInt(temp, 10, 64)
+				if err != nil {
+					continue
+				}
+			} else if strings.Contains(value, "%") {
+				Value, err = strconv.ParseInt(value[:len(value)-1], 10, 64)
+				if err != nil {
+					continue
+				}
+			} else if strings.Contains(value, ",") {
+				numberstr := strings.ReplaceAll(value, ",", "")
+				Value, err = strconv.ParseInt(numberstr, 10, 64)
+				if err != nil {
+					continue
+				}
+			} else {
+				Value, err = strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					continue
+				}
+			}
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, diskSubsystem, "smart"),
+					"Linux Disk Smart Info",
+					[]string{"device", "target"}, nil,
+				),
+				prometheus.GaugeValue, float64(Value), device, key,
+			)
+		}
+	}
+
 	return nil
 }
 
