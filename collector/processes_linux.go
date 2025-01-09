@@ -17,6 +17,7 @@
 package collector
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -162,6 +163,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
+
 	pidsqls, pidtypes, err := c.getDbPids()
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
@@ -334,7 +336,43 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	// fmt.Println("当前时间是：",time.Now())
+
+	//获取端口占用
+	cmd = exec.Command("ss", "-tulnp")
+	output, err = cmd.Output()
+	if err != nil {
+		return fmt.Errorf("ss command error: %w", err)
+	}
+	outputStr := string(output)
+	scanner := bufio.NewScanner(strings.NewReader(outputStr))
+	var results []string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		results = append(results, strings.TrimSpace(line))
+	}
+
+	// 生成指标
+	for _, result := range results[1:] {
+		values := strings.Fields(result)
+		net_type := values[0]
+		state := values[1]
+		ip := strings.Split(values[4], ":")
+		local_port := ip[len(ip)-1]
+		re := regexp.MustCompile(`\("([^"]+)",pid=(\d+),fd=(\d+)\)`)
+		// 查找所有匹配项
+		matches := re.FindAllStringSubmatch(values[6], -1)
+		for _, match := range matches {
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, subsystem, "port_occupied"),
+					"Linux Process port occupied",
+					[]string{"type", "state", "port", "process", "pid", "fd"}, nil,
+				),
+				prometheus.GaugeValue, 1, net_type, state, local_port, match[1], match[2], match[3],
+			)
+		}
+	}
 	return nil
 }
 
