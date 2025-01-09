@@ -355,6 +355,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	// 生成指标
 	for _, result := range results[1:] {
 		values := strings.Fields(result)
+		if len(values) < 7 {
+			continue
+		}
 		net_type := values[0]
 		state := values[1]
 		ip := strings.Split(values[4], ":")
