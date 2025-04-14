@@ -390,7 +390,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 	currentTime = time.Now()
-	timestamp = currentTime.Unix()
+	timestamp = currentTime.UnixNano()
 	level.Debug(c.logger).Log("get port occupied metrics finished。",timestamp)
 	return nil
 }
@@ -445,11 +445,11 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 	pidmysqls := make(map[string]string)
 	pidtypes := make(map[string]string)
 	currentTime := time.Now()
-	timestamp := currentTime.Unix()
+	timestamp := currentTime.UnixNano()
 	level.Debug(c.logger).Log("start get db。",timestamp)
 	cmd := exec.Command("docker", "ps", "-a", "-q", "--filter", "status=running", "--filter", "name=k8s_mysql_", "--filter", "name=k8s_redis_", "--filter", "name=k8s_mongo_")
 	currentTime = time.Now()
-	timestamp = currentTime.Unix()
+	timestamp = currentTime.UnixNano()
 	level.Debug(c.logger).Log("get docker container id finished。",timestamp)
 	output, err := cmd.Output()
 	if err == nil {
@@ -500,7 +500,7 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 							}
 						}
 						currentTime = time.Now()
-						timestamp = currentTime.Unix()
+						timestamp = currentTime.UnixNano()
 						level.Debug(c.logger).Log("get ",dbname," mysql pid finished。",timestamp)
 					}
 				}
@@ -525,7 +525,7 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 							}
 						}
 						currentTime = time.Now()
-						timestamp = currentTime.Unix()
+						timestamp = currentTime.UnixNano()
 						level.Debug(c.logger).Log("get ",dbname," redis pid finished。",timestamp)
 					}
 				}
@@ -551,7 +551,7 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 							}
 						}
 						currentTime = time.Now()
-						timestamp = currentTime.Unix()
+						timestamp = currentTime.UnixNano()
 						level.Debug(c.logger).Log("get ",dbname," mongo pid finished。",timestamp)
 					}
 				}
@@ -561,7 +561,7 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 			}
 		}
 		currentTime = time.Now()
-		timestamp = currentTime.Unix()
+		timestamp = currentTime.UnixNano()
 		level.Debug(c.logger).Log("get db pid finished。",timestamp)
 		return pidmysqls, pidtypes, nil
 	}
