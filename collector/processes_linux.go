@@ -164,14 +164,14 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
 	currentTime := time.Now()
-	timestampNano := currentTime.UnixNano()
-	level.Debug(c.logger).Log("start self process collect %d", timestampNano)
+	timestamp := currentTime.UnixNano()
+	level.Debug(c.logger).Log("start self process collect ", timestamp)
 
 	pidsqls, pidtypes, err := c.getDbPids()
 
 	currentTime = time.Now()
-	timestampNano = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get db pids finished.%d", timestampNano)
+	timestamp = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get db pids finished", timestamp)
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
 	output, err := cmd.Output()
@@ -321,8 +321,8 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 	currentTime = time.Now()
-	timestampNano = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get top metrics finished.%d", timestampNano)
+	timestamp = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get top metrics finished", timestamp)
 	info, err := c.getProcessDiskIO()
 	if err == nil {
 		for pidrd := range info.piddiskrds {
@@ -346,10 +346,10 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	
+
 	currentTime = time.Now()
-	timestampNano = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get disk io metrics finished.%d", timestampNano)
+	timestamp = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get disk io metrics finished", timestamp)
 	//获取端口占用
 	cmd = exec.Command("ss", "-tulnp")
 	output, err = cmd.Output()
@@ -390,8 +390,8 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 	currentTime = time.Now()
-	timestampNano = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get port occupied metrics finished.%d", timestampNano)
+	timestamp = currentTime.Unix()
+	level.Debug(c.logger).Log("get port occupied metrics finished。",timestamp)
 	return nil
 }
 
@@ -444,9 +444,13 @@ func (c *processCollector) getProcessDiskIO() (*processDiskIoInfo, error) {
 func (c *processCollector) getDbPids() (map[string]string, map[string]string, error) {
 	pidmysqls := make(map[string]string)
 	pidtypes := make(map[string]string)
-
+	currentTime := time.Now()
+	timestamp := currentTime.Unix()
+	level.Debug(c.logger).Log("start get db。",timestamp)
 	cmd := exec.Command("docker", "ps", "-a", "-q", "--filter", "status=running", "--filter", "name=k8s_mysql_", "--filter", "name=k8s_redis_", "--filter", "name=k8s_mongo_")
-
+	currentTime = time.Now()
+	timestamp = currentTime.Unix()
+	level.Debug(c.logger).Log("get docker container id finished。",timestamp)
 	output, err := cmd.Output()
 	if err == nil {
 		result := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -495,6 +499,9 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 								continue
 							}
 						}
+						currentTime = time.Now()
+						timestamp = currentTime.Unix()
+						level.Debug(c.logger).Log("get ",dbname," mysql pid finished。",timestamp)
 					}
 				}
 				if dbtype == "redis" {
@@ -517,6 +524,9 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 								continue
 							}
 						}
+						currentTime = time.Now()
+						timestamp = currentTime.Unix()
+						level.Debug(c.logger).Log("get ",dbname," redis pid finished。",timestamp)
 					}
 				}
 
@@ -540,6 +550,9 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 								continue
 							}
 						}
+						currentTime = time.Now()
+						timestamp = currentTime.Unix()
+						level.Debug(c.logger).Log("get ",dbname," mongo pid finished。",timestamp)
 					}
 				}
 				pidmysqls[pid] = dbname
@@ -547,6 +560,9 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 
 			}
 		}
+		currentTime = time.Now()
+		timestamp = currentTime.Unix()
+		level.Debug(c.logger).Log("get db pid finished。",timestamp)
 		return pidmysqls, pidtypes, nil
 	}
 	return nil, nil, nil
