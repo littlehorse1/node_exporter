@@ -28,7 +28,7 @@ import (
 	"strings"
 	"syscall"
 
-	// "time"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -163,8 +163,15 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
+	currentTime := time.Now()
+	timestampNano := currentTime.UnixNano()
+	level.Debug(c.logger).Log("start self process collect %d", timestampNano)
 
 	pidsqls, pidtypes, err := c.getDbPids()
+
+	currentTime = time.Now()
+	timestampNano = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get db pids finished.%d", timestampNano)
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
 	// Run the command and capture the output
 	output, err := cmd.Output()
@@ -313,6 +320,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
+	currentTime = time.Now()
+	timestampNano = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get top metrics finished.%d", timestampNano)
 	info, err := c.getProcessDiskIO()
 	if err == nil {
 		for pidrd := range info.piddiskrds {
@@ -336,7 +346,10 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-
+	
+	currentTime = time.Now()
+	timestampNano = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get disk io metrics finished.%d", timestampNano)
 	//获取端口占用
 	cmd = exec.Command("ss", "-tulnp")
 	output, err = cmd.Output()
@@ -351,7 +364,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		line := scanner.Text()
 		results = append(results, strings.TrimSpace(line))
 	}
-
+	
 	// 生成指标
 	for _, result := range results[1:] {
 		values := strings.Fields(result)
@@ -376,6 +389,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
+	currentTime = time.Now()
+	timestampNano = currentTime.UnixNano()
+	level.Debug(c.logger).Log("get port occupied metrics finished.%d", timestampNano)
 	return nil
 }
 
