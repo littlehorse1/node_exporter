@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"path/filepath"
 
 	"time"
 
@@ -51,6 +52,13 @@ type processDiskIoInfo struct {
 	piddiskrds      map[string]float64
 	piddiskwrs      map[string]float64
 	piddiskcommands map[string]string
+}
+
+// 定义数据库类型对应的进程名
+var dbTypeToComm = map[string]string{
+    "mysql": "mysqld",
+    "redis": "redis-server",
+    "mongo": "mongod",
 }
 
 func init() {
@@ -479,80 +487,11 @@ func (c *processCollector) getDbPids() (map[string]string, map[string]string, er
 				} else {
 					dbname = lists[1]
 				}
-				if dbtype == "mysql" {
-					regexpattern := `mysqld\((\d+)\)`
-					cmd := exec.Command("pstree", "-p", pid, "-T")
-
-					re, err := regexp.Compile(regexpattern)
-
-					if err != nil {
-						continue
-					} else {
-						output, _ := cmd.Output()
-
-						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						for _, line := range strs {
-							matches := re.FindStringSubmatch(line)
-							if len(matches) > 1 {
-								pid = matches[1]
-							} else {
-								continue
-							}
-						}
-						currentTime = time.Now()
-						timestamp = currentTime.UnixNano()
-						level.Debug(c.logger).Log("get ",dbname," mysql pid finished。",timestamp)
-					}
-				}
-				if dbtype == "redis" {
-					regexpattern := `redis-server\((\d+)\)`
-					cmd := exec.Command("pstree", "-p", pid, "-T")
-
-					re, err := regexp.Compile(regexpattern)
-
-					if err != nil {
-						continue
-					} else {
-						output, _ := cmd.Output()
-
-						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						for _, line := range strs {
-							matches := re.FindStringSubmatch(line)
-							if len(matches) > 1 {
-								pid = matches[1]
-							} else {
-								continue
-							}
-						}
-						currentTime = time.Now()
-						timestamp = currentTime.UnixNano()
-						level.Debug(c.logger).Log("get ",dbname," redis pid finished。",timestamp)
-					}
-				}
-
-				if dbtype == "mongo" {
-					regexpattern := `mongod\((\d+)\)`
-					cmd := exec.Command("pstree", "-p", pid, "-T")
-
-					re, err := regexp.Compile(regexpattern)
-
-					if err != nil {
-						continue
-					} else {
-						output, _ := cmd.Output()
-
-						strs := strings.Split(strings.TrimSpace(string(output)), "\n")
-						for _, line := range strs {
-							matches := re.FindStringSubmatch(line)
-							if len(matches) > 1 {
-								pid = matches[1]
-							} else {
-								continue
-							}
-						}
-						currentTime = time.Now()
-						timestamp = currentTime.UnixNano()
-						level.Debug(c.logger).Log("get ",dbname," mongo pid finished。",timestamp)
+				
+				// 处理进程树
+				if targetComm, ok := dbTypeToComm[dbtype]; ok {
+					if newPid, err := findChildProcess(pid, targetComm); err == nil {
+						pid = newPid
 					}
 				}
 				pidmysqls[pid] = dbname
@@ -644,4 +583,65 @@ func (c *processCollector) isIgnoredError(err error) bool {
 		return true
 	}
 	return false
+}
+
+// 通过/proc文件系统查找子进程
+func findChildProcess(parentPid string, targetComm string) (string, error) {
+    ppid, err := strconv.Atoi(parentPid)
+    if err != nil {
+        return parentPid, err
+    }
+
+    return findRecursive(ppid, targetComm, 0)
+}
+
+// 递归查找子进程（最大深度3层）
+func findRecursive(pid int, target string, depth int) (string, error) {
+    if depth > 3 {
+        return "", fmt.Errorf("max depth exceeded")
+    }
+
+    children, err := getChildrenPIDs(pid)
+    if err != nil {
+        return "", err
+    }
+
+    for _, child := range children {
+        comm, _ := getProcessComm(child)
+        if comm == target {
+            return strconv.Itoa(child), nil
+        }
+
+        if found, err := findRecursive(child, target, depth+1); err == nil {
+            return found, nil
+        }
+    }
+
+    return "", fmt.Errorf("target process not found")
+}
+
+// 获取进程的子进程ID列表
+func getChildrenPIDs(pid int) ([]int, error) {
+    data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "task", strconv.Itoa(pid), "children"))
+    if err != nil {
+        return nil, err
+    }
+
+    var pids []int
+    for _, s := range strings.Fields(string(data)) {
+        pid, _ := strconv.Atoi(s)
+        if pid > 0 {
+            pids = append(pids, pid)
+        }
+    }
+    return pids, nil
+}
+
+// 获取进程名称
+func getProcessComm(pid int) (string, error) {
+    data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
+    if err != nil {
+        return "", err
+    }
+    return strings.TrimSpace(string(data)), nil
 }
