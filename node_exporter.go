@@ -191,7 +191,7 @@ func main() {
 			Name:        "Node Exporter",
 			Description: "Prometheus Node Exporter",
 			Version:     version.Info(),
-			Links: []web.LandingLinks{
+			Links: []web.LandingLinks{Starting
 				{
 					Address: *metricsPath,
 					Text:    "Metrics",

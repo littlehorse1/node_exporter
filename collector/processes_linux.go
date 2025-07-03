@@ -28,6 +28,8 @@ import (
 	"strings"
 	"syscall"
 	"path/filepath"
+	"io/ioutil"
+	"sort"
 
 	"time"
 
@@ -36,6 +38,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
 )
+
+type ProcessFDInfo struct {
+    PID     string
+    Name    string
+    FDCount int
+    MaxFD   int
+}
 
 type processCollector struct {
 	fs           procfs.FS
@@ -141,7 +150,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			"Node Exporter Version",
 			nil, nil,
 		),
-		prometheus.GaugeValue, 1.06,
+		prometheus.GaugeValue, 1.07,
 	)
 
 	pids, states, threads, threadStates, err := c.getAllocatedThreads()
@@ -171,23 +180,18 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	}
 	ch <- prometheus.MustNewConstMetric(c.pidUsed, prometheus.GaugeValue, float64(pids))
 	ch <- prometheus.MustNewConstMetric(c.pidMax, prometheus.GaugeValue, float64(pidM))
-	currentTime := time.Now()
-	timestamp := currentTime.UnixNano()
-	level.Debug(c.logger).Log("start self process collect ", timestamp)
-
+	
+	// 自定义指标采集
+	level.Debug(c.logger).Log("start self process collect")
 	pidsqls, pidtypes, err := c.getDbPids()
+	level.Debug(c.logger).Log("get db pids finished")
 
-	currentTime = time.Now()
-	timestamp = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get db pids finished", timestamp)
 	cmd := exec.Command("top", "-n", "1", "-b", "-c", "-w", "512")
-	// Run the command and capture the output
 	output, err := cmd.Output()
 
 	if err == nil {
 		result := strings.Split(strings.TrimSpace(string(output)), "\n")
 		re := regexp.MustCompile(`\s+`)
-
 		re1 := regexp.MustCompile(`\d+`)
 		matches := re1.FindAllString(result[1], -1)
 
@@ -220,21 +224,6 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			virt := ConvertMem(str[4])
 			res := ConvertMem(str[5])
 			shr := ConvertMem(str[6])
-			// if strings.HasSuffix(str[4], "g") {
-			// 	virt,err = strconv.ParseFloat(str[4][:len(str[4])-1], 64)
-			// 	virt = virt * 1024 * 1024
-			// }
-
-			// res, err := strconv.ParseFloat(str[5], 64)
-			// if strings.HasSuffix(str[5], "g") {
-			// 	res,err = strconv.ParseFloat(str[5][:len(str[5])-1], 64)
-			// 	res = res * 1024 * 1024
-			// }
-			// shr, err := strconv.ParseFloat(str[6], 64)
-			// if strings.HasSuffix(str[6], "g") {
-			// 	shr,err = strconv.ParseFloat(str[6][:len(str[6])-1], 64)
-			// 	shr = shr * 1024 * 1024
-			// }
 			Pid := str[0]
 			user := str[1]
 			Commandline := strings.Join(str[11:], " ")
@@ -328,9 +317,35 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	currentTime = time.Now()
-	timestamp = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get top metrics finished", timestamp)
+	level.Debug(c.logger).Log("get top metrics finished")
+	processes, err := listProcesses()
+	sort.Slice(processes, func(i, j int) bool {
+        return processes[i].FDCount > processes[j].FDCount
+    })
+    topN := 100
+    if len(processes) < topN {
+        topN = len(processes)
+    }
+    topProcesses := processes[:topN]
+    for _, p := range topProcesses {
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "fd_open"),
+				"Linux Process info",
+				[]string{"pid", "command"}, nil,
+			),
+			prometheus.GaugeValue, float64(p.FDCount), p.PID, p.Name,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, subsystem, "fd_max"),
+				"Linux Process info",
+				[]string{"pid", "command"}, nil,
+			),
+			prometheus.GaugeValue, float64(p.MaxFD), p.PID, p.Name,
+		)
+    }
+	level.Debug(c.logger).Log("get fd metrics finished")
 	info, err := c.getProcessDiskIO()
 	if err == nil {
 		for pidrd := range info.piddiskrds {
@@ -354,10 +369,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-
-	currentTime = time.Now()
-	timestamp = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get disk io metrics finished", timestamp)
+	level.Debug(c.logger).Log("get disk io metrics finished")
 	//获取端口占用
 	cmd = exec.Command("ss", "-tulnp")
 	output, err = cmd.Output()
@@ -397,9 +409,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			)
 		}
 	}
-	currentTime = time.Now()
-	timestamp = currentTime.UnixNano()
-	level.Debug(c.logger).Log("get port occupied metrics finished。",timestamp)
+	level.Debug(c.logger).Log("get port occupied metrics finished。")
 	return nil
 }
 
@@ -644,4 +654,77 @@ func getProcessComm(pid int) (string, error) {
         return "", err
     }
     return strings.TrimSpace(string(data)), nil
+}
+
+func listProcesses() ([]ProcessFDInfo, error) {
+    var processes []ProcessFDInfo
+
+    files, err := ioutil.ReadDir("/proc")
+    if err != nil {
+        return nil, fmt.Errorf("failed to read /proc: %w", err)
+    }
+
+    for _, file := range files {
+        if !file.IsDir() {
+            continue
+        }
+
+        pid, err := strconv.Atoi(file.Name())
+        if err != nil {
+            continue // 跳过非进程目录
+        }
+
+        name, err := getProcessComm(pid)
+        if err != nil {
+            continue
+        }
+
+        fdCount := countOpenFiles(pid)
+        if fdCount == 0 {
+            continue
+        }
+
+        maxFD := getMaxFD(pid)
+
+        processes = append(processes, ProcessFDInfo{
+            PID:     string(pid),
+            Name:    name,
+            FDCount: fdCount,
+            MaxFD:   maxFD,
+        })
+    }
+
+    return processes, nil
+}
+
+func countOpenFiles(pid int) int {
+    fdDir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
+    files, err := ioutil.ReadDir(fdDir)
+    if err != nil {
+        return 0
+    }
+    return len(files)
+}
+
+func getMaxFD(pid int) int {
+    limitsPath := filepath.Join("/proc", strconv.Itoa(pid), "limits")
+    data, err := ioutil.ReadFile(limitsPath)
+    if err != nil {
+        return 1024
+    }
+
+    lines := strings.Split(string(data), "\n")
+    for _, line := range lines {
+        if strings.Contains(line, "Max open files") {
+            fields := strings.Fields(line)
+            if len(fields) >= 4 {
+				MaxFD, err := strconv.Atoi(fields[3])
+				if err != nil {
+					return 1024
+				}
+                return MaxFD
+            }
+        }
+    }
+    return 1024
 }
