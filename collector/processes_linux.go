@@ -687,7 +687,7 @@ func listProcesses() ([]ProcessFDInfo, error) {
         maxFD := getMaxFD(pid)
 
         processes = append(processes, ProcessFDInfo{
-            PID:     string(pid),
+            PID:     strconv.Itoa(pid),
             Name:    name,
             FDCount: fdCount,
             MaxFD:   maxFD,
