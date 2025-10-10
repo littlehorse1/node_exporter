@@ -437,7 +437,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Utilization",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, float64(gpu.GpuUtilization), name, uuid,
+				prometheus.GaugeValue, gpu.GpuUtilization, name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -446,7 +446,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Memory Utilization",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, float64(gpu.MemoryUtilization), name, uuid,
+				prometheus.GaugeValue, gpu.MemoryUtilization, name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -455,7 +455,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu memory total",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue,  float64(gpu.MemoryTotal), name, uuid,
+				prometheus.GaugeValue,  gpu.MemoryTotal, name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -464,7 +464,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu memory used",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue,  float64(gpu.MemoryUsed), name, uuid,
+				prometheus.GaugeValue,  gpu.MemoryUsed, name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -473,7 +473,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Memory free",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue,  float64(gpu.MemoryFree), name, uuid,
+				prometheus.GaugeValue,  gpu.MemoryFree, name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -482,7 +482,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu temperature",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue,  float64(gpu.Temperature), name, uuid,
+				prometheus.GaugeValue,  gpu.Temperature, name, uuid,
 			)
         }
     }
@@ -874,18 +874,18 @@ func getGPUInfo() ([]GPU, error) {
             
             // 性能指标
             if util, ret := device.GetUtilizationRates(); ret == nvml.SUCCESS {
-                gpuInfo.GpuUtilization = util.Gpu
-                gpuInfo.MemoryUtilization = util.Memory
+                gpuInfo.GpuUtilization = float64(util.Gpu)
+                gpuInfo.MemoryUtilization = float64(util.Memory)
             }
             
             if mem, ret := device.GetMemoryInfo(); ret == nvml.SUCCESS {
-                gpuInfo.MemoryTotal = mem.Total
-                gpuInfo.MemoryUsed = mem.Used
-                gpuInfo.MemoryFree = mem.Free
+                gpuInfo.MemoryTotal = float64(mem.Total)
+                gpuInfo.MemoryUsed = float64(mem.Used)
+                gpuInfo.MemoryFree = float64(mem.Free)
             }
             
             if temp, ret := device.GetTemperature(nvml.TEMPERATURE_GPU); ret == nvml.SUCCESS {
-                gpuInfo.Temperature = temp
+                gpuInfo.Temperature = float64(temp)
             }
                
             // 添加到结果列表
