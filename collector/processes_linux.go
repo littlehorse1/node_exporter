@@ -162,7 +162,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 			"Node Exporter Version",
 			nil, nil,
 		),
-		prometheus.GaugeValue, 1.07,
+		prometheus.GaugeValue, 1.08,
 	)
 
 	pids, states, threads, threadStates, err := c.getAllocatedThreads()
