@@ -37,7 +37,19 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
+
+type GPU struct {
+	Name string
+	Uuid string
+	GpuUtilization float64
+	MemoryUtilization float64
+	MemoryTotal float64
+	MemoryUsed float64
+	MemoryFree float64
+	Temperature float64
+}
 
 type ProcessFDInfo struct {
     PID     string
@@ -410,6 +422,72 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 	level.Debug(c.logger).Log("get port occupied metrics finished。")
+
+	// 尝试获取GPU信息
+	gpus, err := getGPUInfo()
+    // 根据情况处理结果
+    if err == nil {
+        for _, gpu := range gpus {
+			name := gpu.Name
+			uuid := gpu.Uuid
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "utilization"),
+					"Linux Gpu Utilization",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.GpuUtilization, name, uuid,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "memory_utilization"),
+					"Linux Gpu Memory Utilization",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.MemoryUtilization, name, uuid,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "memory_total"),
+					"Linux Gpu memory total",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.MemoryTotal, name, uuid,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "memory_used"),
+					"Linux Gpu memory used",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.MemoryUsed, name, uuid,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "memory_free"),
+					"Linux Gpu Memory free",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.MemoryFree, name, uuid,
+			)
+
+			ch <- prometheus.MustNewConstMetric(
+				prometheus.NewDesc(
+					prometheus.BuildFQName(namespace, "gpu", "temperature"),
+					"Linux Gpu temperature",
+					[]string{"name", "uuid"}, nil,
+				),
+				prometheus.GaugeValue, gpu.Temperature, name, uuid,
+			)
+        }
+    }
+
+
 	return nil
 }
 
@@ -727,4 +805,96 @@ func getMaxFD(pid int) int {
         }
     }
     return 1024
+}
+
+// 检测 nvidia-smi 是否安装
+func isNvidiaSMIInstalled() bool { 
+    // 尝试执行 nvidia-smi --help 命令
+    cmd := exec.Command("nvidia-smi", "--help")
+
+    if err := cmd.Run(); err == nil {
+        // 安全初始化 NVML
+        ret := nvml.Init()
+        if ret != nvml.SUCCESS {
+            return false
+        }
+        
+        // 验证是否有可用的 GPU 设备
+        count, ret := nvml.DeviceGetCount()
+        if ret != nvml.SUCCESS {
+            nvml.Shutdown()
+            return false
+        }
+        
+        if count == 0 {
+            nvml.Shutdown()
+            return false
+        }
+        return true
+    }
+    return false
+}
+
+// 获取 GPU 信息
+func getGPUInfo() ([]GPU, error) {
+    // 1. 检查 nvidia-smi 是否可用 ,并安全初始化nvml
+    if !isNvidiaSMIInstalled() {
+         fmt.Println("初始化失败")
+         return nil, errors.New("初始化失败")
+        // level.Debug(c.logger).Log("vidia-smi 未安装/初始化失败")
+    }else{
+        defer nvml.Shutdown()
+
+        // 4. 获取 GPU 数量
+        count, ret := nvml.DeviceGetCount()
+        if ret != nvml.SUCCESS {
+            return nil, fmt.Errorf("获取 GPU 数量失败: %s", nvml.ErrorString(ret))
+        }
+        
+        // 5. 收集 GPU 信息
+        var gpus []GPU
+        for i := 0; i < count; i++ {
+            gpuInfo := GPU{}
+            
+            // 获取设备句柄
+            device, ret := nvml.DeviceGetHandleByIndex(i)
+            if ret != nvml.SUCCESS {
+                continue
+            }
+			
+            
+            // 基本信息
+            if name, ret := device.GetName(); ret == nvml.SUCCESS {
+                gpuInfo.Name = name
+            }
+            
+            if uuid, ret := device.GetUUID(); ret == nvml.SUCCESS {
+                gpuInfo.Uuid = uuid
+            }
+            
+            // 性能指标
+            if util, ret := device.GetUtilizationRates(); ret == nvml.SUCCESS {
+                gpuInfo.GpuUtilization = util.Gpu
+                gpuInfo.MemoryUtilization = util.Memory
+            }
+            
+            if mem, ret := device.GetMemoryInfo(); ret == nvml.SUCCESS {
+                gpuInfo.MemoryTotal = mem.Total
+                gpuInfo.MemoryUsed = mem.Used
+                gpuInfo.MemoryFree = mem.Free
+            }
+            
+            if temp, ret := device.GetTemperature(nvml.TEMPERATURE_GPU); ret == nvml.SUCCESS {
+                gpuInfo.Temperature = temp
+            }
+               
+            // 添加到结果列表
+            gpus = append(gpus, gpuInfo)
+        }
+        
+        if len(gpus) == 0 {
+            return nil, errors.New("未获取到有效的 GPU 信息")
+        }
+        return gpus, nil
+    }
 }
