@@ -437,7 +437,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Utilization",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.GpuUtilization, name, uuid,
+				prometheus.GaugeValue, float64(gpu.GpuUtilization), name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -446,7 +446,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Memory Utilization",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.MemoryUtilization, name, uuid,
+				prometheus.GaugeValue, float64(gpu.MemoryUtilization), name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -455,7 +455,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu memory total",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.MemoryTotal, name, uuid,
+				prometheus.GaugeValue,  float64(gpu.MemoryTotal), name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -464,7 +464,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu memory used",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.MemoryUsed, name, uuid,
+				prometheus.GaugeValue,  float64(gpu.MemoryUsed), name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -473,7 +473,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu Memory free",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.MemoryFree, name, uuid,
+				prometheus.GaugeValue,  float64(gpu.MemoryFree), name, uuid,
 			)
 
 			ch <- prometheus.MustNewConstMetric(
@@ -482,7 +482,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 					"Linux Gpu temperature",
 					[]string{"name", "uuid"}, nil,
 				),
-				prometheus.GaugeValue, gpu.Temperature, name, uuid,
+				prometheus.GaugeValue,  float64(gpu.Temperature), name, uuid,
 			)
         }
     }
