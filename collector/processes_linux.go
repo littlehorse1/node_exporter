@@ -28,7 +28,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -760,7 +759,6 @@ func (c *processCollector) scanAllProcs() (*procScanResult, error) {
 	now        := time.Now()
 	pageKB     := float64(os.Getpagesize()) / 1024.0
 	memTotalKB := getMemTotalKB()
-	numCPUs    := float64(runtime.NumCPU())
 
 	// 读取上一周期快照（持锁保护，读完即释放锁）
 	c.statsMu.Lock()
@@ -781,6 +779,7 @@ func (c *processCollector) scanAllProcs() (*procScanResult, error) {
 	heap.Init(h)
 
 	result := &procScanResult{
+
 		diskReadKBs:  make(map[string]float64),
 		diskWriteKBs: make(map[string]float64),
 		diskComm:     make(map[string]string),
@@ -835,12 +834,14 @@ func (c *processCollector) scanAllProcs() (*procScanResult, error) {
 		virtKB := float64(vsize) / 1024.0
 		resKB  := float64(rss) * pageKB
 
-		// CPU%：两次采集的 jiffies 差 / 经过秒数 / CPU 核数 × 100
+		// CPU%：与 top 的 Irix 模式（默认）保持一致，以单核为基准。
+		// 公式：Δjiffies / USER_HZ / elapsed_seconds × 100
+		// 不除以 numCPUs——与 top 默认行为一致，值域与原指标相同（可超过 100%）。
 		// 防御 uint64 下溢（PID 复用时 jiffies 会重置）
 		cpuPct := 0.0
 		if !firstRun && elapsed > 0 {
 			if prev, ok := prevCPU[pid]; ok && totalJiffies >= prev.jiffies {
-				cpuPct = float64(totalJiffies-prev.jiffies) / clkTck / elapsed / numCPUs * 100.0
+				cpuPct = float64(totalJiffies-prev.jiffies) / clkTck / elapsed * 100.0
 			}
 		}
 
