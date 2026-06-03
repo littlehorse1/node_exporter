@@ -545,7 +545,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ch <- prometheus.MustNewConstMetric(c.descVersion, prometheus.GaugeValue, 1.08)
 
 	// ── 原生线程/进程统计（保持不变）────────────────────────────────────────
-	pids, states, threads, threadStates, err := c.getAllocatedThreads()
+	pids, states, threads, threadStates, err := c.getAllocatedThreads(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to retrieve number of allocated threads: %w", err)
 	}
@@ -635,7 +635,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 
 	// ── 主路径：一次遍历 /proc，合并完成 CPU%、内存、FD、磁盘 IO 采集 ───────
 	level.Debug(c.logger).Log("msg", "start proc scan")
-	procData, scanErr := c.scanAllProcs()
+	procData, scanErr := c.scanAllProcs(ctx)
 	level.Debug(c.logger).Log("msg", "proc scan finished")
 
 	// 等待 DB PID 结果（已在 proc 扫描期间并行运行完毕）
@@ -755,7 +755,9 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 //   3. pidstat -d -l 1 1（子进程，每次强制等待 ≥1 秒！）
 // =============================================================================
 
-func (c *processCollector) scanAllProcs() (*procScanResult, error) {
+// scanAllProcs 接受顶层 ctx，在每个进程迭代前检查是否已超时。
+// 超时时返回已扫描的部分结果（而非 nil），让 Update 仍能上报已采集到的指标。
+func (c *processCollector) scanAllProcs(ctx context.Context) (*procScanResult, error) {
 	now        := time.Now()
 	pageKB     := float64(os.Getpagesize()) / 1024.0
 	memTotalKB := getMemTotalKB()
@@ -779,7 +781,6 @@ func (c *processCollector) scanAllProcs() (*procScanResult, error) {
 	heap.Init(h)
 
 	result := &procScanResult{
-
 		diskReadKBs:  make(map[string]float64),
 		diskWriteKBs: make(map[string]float64),
 		diskComm:     make(map[string]string),
@@ -792,6 +793,23 @@ func (c *processCollector) scanAllProcs() (*procScanResult, error) {
 	}
 
 	for _, entry := range entries {
+		// 每处理一个进程前检查顶层超时；超时则携带已扫描的部分结果返回，
+		// 避免进程数过多时 scanAllProcs 阻塞整个 Update。
+		select {
+		case <-ctx.Done():
+			level.Warn(c.logger).Log(
+				"msg", "scanAllProcs: context deadline exceeded, returning partial results",
+				"scanned_procs", len(result.perProc),
+			)
+			// 仍需写回本次已收集的快照，否则下次采集 delta 会从更早的基准算起
+			c.statsMu.Lock()
+			c.prevIOStats = newIO
+			c.prevCPUStat = newCPU
+			c.prevTime    = now
+			c.statsMu.Unlock()
+			return result, nil
+		default:
+		}
 		if !entry.IsDir() {
 			continue
 		}
@@ -1043,7 +1061,7 @@ func (c *processCollector) getDbPids(parentCtx context.Context) (map[string]stri
 // 以下函数来自原始代码，逻辑保持不变（仅作格式整理）
 // =============================================================================
 
-func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, map[string]int32, error) {
+func (c *processCollector) getAllocatedThreads(ctx context.Context) (int, map[string]int32, int, map[string]int32, error) {
 	p, err := c.fs.AllProcs()
 	if err != nil {
 		return 0, nil, 0, nil, fmt.Errorf("unable to list all processes: %w", err)
@@ -1054,6 +1072,16 @@ func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, ma
 	threadStates := make(map[string]int32)
 
 	for _, pid := range p {
+		// 每处理一个进程前检查超时，进程数过多时可及时中断
+		select {
+		case <-ctx.Done():
+			level.Warn(c.logger).Log(
+				"msg", "getAllocatedThreads: context deadline exceeded, returning partial results",
+				"scanned_pids", pids,
+			)
+			return pids, procStates, thread, threadStates, nil
+		default:
+		}
 		stat, err := pid.Stat()
 		if err != nil {
 			if c.isIgnoredError(err) {
@@ -1066,7 +1094,7 @@ func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, ma
 		pids++
 		procStates[stat.State]++
 		thread += stat.NumThreads
-		err = c.getThreadStates(pid.PID, stat, threadStates)
+		err = c.getThreadStates(ctx, pid.PID, stat, threadStates)
 		if err != nil {
 			return 0, nil, 0, nil, err
 		}
@@ -1074,7 +1102,7 @@ func (c *processCollector) getAllocatedThreads() (int, map[string]int32, int, ma
 	return pids, procStates, thread, threadStates, nil
 }
 
-func (c *processCollector) getThreadStates(pid int, pidStat procfs.ProcStat, threadStates map[string]int32) error {
+func (c *processCollector) getThreadStates(ctx context.Context, pid int, pidStat procfs.ProcStat, threadStates map[string]int32) error {
 	fs, err := procfs.NewFS(procFilePath(path.Join(strconv.Itoa(pid), "task")))
 	if err != nil {
 		if c.isIgnoredError(err) {
@@ -1095,6 +1123,12 @@ func (c *processCollector) getThreadStates(pid int, pidStat procfs.ProcStat, thr
 	}
 
 	for _, thread := range t {
+		// 线程数量可能极多（如 Java 进程），每次迭代前检查超时
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
 		if pid == thread.PID {
 			threadStates[pidStat.State]++
 			continue
