@@ -542,7 +542,7 @@ func (c *processCollector) Update(ch chan<- prometheus.Metric) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
 	defer cancel()
 
-	ch <- prometheus.MustNewConstMetric(c.descVersion, prometheus.GaugeValue, 1.08)
+	ch <- prometheus.MustNewConstMetric(c.descVersion, prometheus.GaugeValue, 1.09)
 
 	// ── 原生线程/进程统计（保持不变）────────────────────────────────────────
 	pids, states, threads, threadStates, err := c.getAllocatedThreads(ctx)
