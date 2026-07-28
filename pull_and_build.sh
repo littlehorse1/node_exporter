@@ -39,6 +39,44 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 }
 git fetch --all --prune
 
+stash_if_dirty() {
+  # Returns 0 if stashed, 1 if nothing to stash.
+  if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+    return 1
+  fi
+
+  local msg="auto-stash: pull_and_build.sh"
+  local before after
+  before="$(git stash list 2>/dev/null | wc -l | tr -d '[:space:]' || echo 0)"
+
+  # Newer git:
+  if git stash push -u -m "${msg}" >/dev/null 2>&1; then
+    :
+  # Older git (no 'push' / no '-m'):
+  elif git stash save -u "${msg}" >/dev/null 2>&1; then
+    :
+  elif git stash save --include-untracked "${msg}" >/dev/null 2>&1; then
+    :
+  else
+    # Worst-case fallback (may not include untracked files)
+    git stash save "${msg}" >/dev/null
+  fi
+
+  after="$(git stash list 2>/dev/null | wc -l | tr -d '[:space:]' || echo 0)"
+  if [ "${after}" -le "${before}" ]; then
+    echo "[WARN] stash did not create a new entry; continuing without stash pop"
+    return 0
+  fi
+  return 0
+}
+
+pop_stash_if_any() {
+  # Pop latest stash entry (best effort).
+  git stash pop >/dev/null 2>&1 || {
+    echo "[WARN] stash pop had conflicts; resolve manually: git status"
+  }
+}
+
 # If working tree is dirty, auto-stash to allow rebase pull.
 # This avoids: "Cannot pull with rebase: You have unstaged changes."
 if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
@@ -47,11 +85,9 @@ if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --o
     :
   else
     echo "[WARN] git pull --autostash failed; falling back to manual stash"
-    git stash push -u -m "auto-stash: pull_and_build.sh" >/dev/null
+    stash_if_dirty || true
     git pull --rebase
-    git stash pop >/dev/null || {
-      echo "[WARN] stash pop had conflicts; resolve manually: git status"
-    }
+    pop_stash_if_any
   fi
 else
   git pull --rebase
