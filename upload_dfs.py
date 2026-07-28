@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import argparse
 import os
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -28,7 +30,7 @@ def upload_file(
     return res.text
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Upload node_exporter outputs under ./out to hk4e-dfs."
     )
@@ -52,12 +54,28 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Keep arm64 separate to avoid overwriting amd64 binary.
     parser.add_argument("--remote-arm64", default="node_exporter_arm64.2", help="Remote filename for arm64")
     parser.add_argument("--username", default="MaQiMing", help="userName header value")
-    parser.add_argument(
-        "--skip-date-folder",
-        default=True,
-        action=argparse.BooleanOptionalAction,
-        help="Set SkipDateFolder header (default: true)",
-    )
+    if hasattr(argparse, "BooleanOptionalAction"):
+        parser.add_argument(
+            "--skip-date-folder",
+            default=True,
+            action=argparse.BooleanOptionalAction,
+            help="Set SkipDateFolder header (default: true)",
+        )
+    else:
+        # Python < 3.9 compatibility.
+        parser.add_argument(
+            "--skip-date-folder",
+            dest="skip_date_folder",
+            action="store_true",
+            default=True,
+            help="Set SkipDateFolder header (default: true)",
+        )
+        parser.add_argument(
+            "--no-skip-date-folder",
+            dest="skip_date_folder",
+            action="store_false",
+            help="Unset SkipDateFolder header",
+        )
     parser.add_argument("--timeout", type=int, default=60, help="HTTP timeout seconds")
 
     args = parser.parse_args(argv)
