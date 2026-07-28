@@ -34,7 +34,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,31 +48,6 @@ var (
 	// rePortProc 匹配 ss 输出中的进程信息，格式：("name",pid=1234,fd=5)
 	rePortProc = regexp.MustCompile(`\("([^"]+)",pid=(\d+),fd=(\d+)\)`)
 )
-
-// =============================================================================
-// 【优化2】NVML 全局单例：进程生命周期内只初始化一次
-// 消除了原先每次采集都调用 nvidia-smi 子进程 + NVML 双重 Init/Shutdown 的问题
-// =============================================================================
-
-var (
-	nvmlOnce      sync.Once
-	nvmlAvailable bool
-)
-
-func initNVML() {
-	nvmlOnce.Do(func() {
-		if ret := nvml.Init(); ret != nvml.SUCCESS {
-			return
-		}
-		count, ret := nvml.DeviceGetCount()
-		if ret != nvml.SUCCESS || count == 0 {
-			nvml.Shutdown()
-			return
-		}
-		nvmlAvailable = true
-		// 保持 NVML 常驻，不在此 Shutdown——Prometheus 采集器无显式停止钩子
-	})
-}
 
 // =============================================================================
 // 【优化3】UID → 用户名缓存：避免对每个进程都查询 /etc/passwd
@@ -100,21 +74,6 @@ func lookupUsername(uid uint32) string {
 	uidNameCache[uid] = name
 	uidNameCacheMu.Unlock()
 	return name
-}
-
-// =============================================================================
-// 类型定义
-// =============================================================================
-
-type GPU struct {
-	Name              string
-	Uuid              string
-	GpuUtilization    float64
-	MemoryUtilization float64
-	MemoryTotal       float64
-	MemoryUsed        float64
-	MemoryFree        float64
-	Temperature       float64
 }
 
 type ProcessFDInfo struct {
@@ -317,52 +276,6 @@ func getMaxFD(pid int) int {
 		}
 	}
 	return 1024
-}
-
-// =============================================================================
-// GPU 采集（基于 NVML 单例，不再每次调用 nvidia-smi 子进程）
-// =============================================================================
-
-// getGPUInfo 通过 NVML 获取所有 GPU 的实时指标。
-// 【修复】原版每次采集都执行 nvidia-smi --help 子进程，且 isNvidiaSMIInstalled 与 getGPUInfo
-// 之间 nvml.Init 被调用两次但只 Shutdown 一次，导致资源泄漏。现统一由 sync.Once 管理。
-func getGPUInfo() ([]GPU, error) {
-	initNVML()
-	if !nvmlAvailable {
-		return nil, nil // 无 GPU 或初始化失败，静默跳过，不打印 fmt.Println
-	}
-	count, ret := nvml.DeviceGetCount()
-	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf("获取 GPU 数量失败: %s", nvml.ErrorString(ret))
-	}
-	var gpus []GPU
-	for i := 0; i < count; i++ {
-		device, ret := nvml.DeviceGetHandleByIndex(i)
-		if ret != nvml.SUCCESS {
-			continue
-		}
-		g := GPU{}
-		if name, ret := device.GetName(); ret == nvml.SUCCESS {
-			g.Name = name
-		}
-		if uuid, ret := device.GetUUID(); ret == nvml.SUCCESS {
-			g.Uuid = uuid
-		}
-		if util, ret := device.GetUtilizationRates(); ret == nvml.SUCCESS {
-			g.GpuUtilization = float64(util.Gpu)
-			g.MemoryUtilization = float64(util.Memory)
-		}
-		if mem, ret := device.GetMemoryInfo(); ret == nvml.SUCCESS {
-			g.MemoryTotal = float64(mem.Total)
-			g.MemoryUsed = float64(mem.Used)
-			g.MemoryFree = float64(mem.Free)
-		}
-		if temp, ret := device.GetTemperature(nvml.TEMPERATURE_GPU); ret == nvml.SUCCESS {
-			g.Temperature = float64(temp)
-		}
-		gpus = append(gpus, g)
-	}
-	return gpus, nil
 }
 
 // =============================================================================

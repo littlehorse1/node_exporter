@@ -358,6 +358,23 @@ Building:
     make build
     ./node_exporter <flags>
 
+### Optional NVML (GPU) support
+
+This fork includes optional NVML-based GPU collection. NVML is **disabled by default** and can be enabled at build time with the `nvml` build tag.
+
+- Build without NVML (recommended for cross-compiling, e.g. linux/arm64):
+
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o node_exporter_linux_arm64 .
+
+- Build with NVML (linux/amd64, requires CGO toolchain and NVIDIA driver NVML at runtime):
+
+    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags nvml -o node_exporter_linux_amd64 .
+
+- Build both linux/amd64 and linux/arm64 outputs:
+
+    ./build_multiarch.sh
+    WITH_NVML_AMD64=1 ./build_multiarch.sh
+
 To see all available configuration flags:
 
     ./node_exporter -h
