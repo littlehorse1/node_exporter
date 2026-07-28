@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec /usr/bin/env bash "$0" "$@"
+fi
 set -euo pipefail
 
 # One-click: update repo and build binaries.
@@ -35,7 +38,24 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   exit 1
 }
 git fetch --all --prune
-git pull --rebase
+
+# If working tree is dirty, auto-stash to allow rebase pull.
+# This avoids: "Cannot pull with rebase: You have unstaged changes."
+if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "[WARN] working tree has local changes; using autostash for pull --rebase"
+  if git pull --rebase --autostash; then
+    :
+  else
+    echo "[WARN] git pull --autostash failed; falling back to manual stash"
+    git stash push -u -m "auto-stash: pull_and_build.sh" >/dev/null
+    git pull --rebase
+    git stash pop >/dev/null || {
+      echo "[WARN] stash pop had conflicts; resolve manually: git status"
+    }
+  fi
+else
+  git pull --rebase
+fi
 
 mkdir -p "${OUT_DIR}"
 
